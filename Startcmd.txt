@@ -1,0 +1,8 @@
+# Navigate to the project directory
+cd c:\Users\rober\AppData\Local\Programs\CodingProjects\CropTracker\src
+
+# Install dependencies (if not already installed)
+pip install -r requirements.txt
+
+# Start the Streamlit app
+streamlit run app.py
