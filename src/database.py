@@ -62,8 +62,10 @@ class Yield(Base):
     def __repr__(self):
         return f"<Yield(weight={self.weight_kg}kg, date={self.harvest_date})>"
 
-DATABASE_URL = "sqlite:///./crop_tracker.db"
+# Use PostgreSQL instead of SQLite
+DATABASE_URL = "postgresql://username:password@host:5432/dbname"
 engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def create_db_and_tables():
