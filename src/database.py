@@ -17,8 +17,12 @@ try:
         db_port = st.secrets.get("DB_PORT", "6543") # Default to Transaction Pooler port
         db_name = st.secrets["DB_NAME"]
         
+        # Determine the driver - pg8000 is more resilient in serverless IPv6 environments
+        db_driver = st.secrets.get("DB_DRIVER", "postgresql+psycopg2")
+        
         # Construct the URL with pooler settings
-        DATABASE_URL = f"postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+        # Note: Supabase pooler hostname is often different (e.g. aws-0-region.pooler.supabase.com)
+        DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
     
     print(f"✅ Using Streamlit secret for database connection")
 except (KeyError, FileNotFoundError):
