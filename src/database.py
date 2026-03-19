@@ -22,7 +22,11 @@ try:
         
         # Construct the URL with pooler settings
         # Note: Supabase pooler hostname is often different (e.g. aws-0-region.pooler.supabase.com)
-        DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+        if "pg8000" in db_driver:
+            # pg8000 uses 'ssl' instead of 'sslmode'
+            DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?ssl=true"
+        else:
+            DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
     
     print(f"✅ Using Streamlit secret for database connection")
 except (KeyError, FileNotFoundError):
