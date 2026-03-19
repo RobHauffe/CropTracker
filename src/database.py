@@ -7,14 +7,38 @@ import os
 
 # Load DATABASE_URL from Streamlit secrets or environment variable
 try:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
-    print(f"✅ Using Streamlit secret DATABASE_URL")
+    # Prefer secret for deployment
+    DATABASE_URL = st.secrets.get("DATABASE_URL")
+    if not DATABASE_URL:
+        # Fallback to individual components if URL isn't directly provided
+        db_username = st.secrets["DB_USERNAME"]
+        db_password = st.secrets["DB_PASSWORD"]
+        db_host = st.secrets["DB_HOST"]
+        db_port = st.secrets.get("DB_PORT", "6543") # Default to Transaction Pooler port
+        db_name = st.secrets["DB_NAME"]
+        
+        # Construct the URL with pooler settings
+        DATABASE_URL = f"postgresql://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+    
+    print(f"✅ Using Streamlit secret for database connection")
 except (KeyError, FileNotFoundError):
     # Fallback to environment variable for local development or initial deployment
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./crop_tracker.db")
     print(f"⚠️ SECRET NOT FOUND - Using fallback: {DATABASE_URL[:50]}..." if "postgresql" in DATABASE_URL else f"⚠️ Using SQLite fallback")
 
-engine = create_engine(DATABASE_URL)
+# engine = create_engine(DATABASE_URL)
+# For PostgreSQL/Supabase, we add pooling and statement timeout settings
+if "postgresql" in DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800,
+        connect_args={"connect_timeout": 10}
+    )
+else:
+    engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
