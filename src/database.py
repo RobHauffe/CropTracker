@@ -37,12 +37,15 @@ except (KeyError, FileNotFoundError):
 # engine = create_engine(DATABASE_URL)
 # For PostgreSQL/Supabase, we add pooling and statement timeout settings
 if "postgresql" in DATABASE_URL:
-    connect_args = {"connect_timeout": 10}
+    connect_args = {}
     
-    # pg8000 needs ssl_context=True passed in connect_args
+    # pg8000 needs ssl_context=True and doesn't support connect_timeout in connect_args
     if "pg8000" in DATABASE_URL:
         connect_args["ssl_context"] = True
-        
+    else:
+        # psycopg2 supports connect_timeout
+        connect_args["connect_timeout"] = 10
+         
     engine = create_engine(
         DATABASE_URL,
         pool_size=5,
