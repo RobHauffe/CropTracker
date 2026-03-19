@@ -10,6 +10,11 @@ import os
 import datetime
 import pandas as pd
 import plotly.express as px
+from fruit_data import FRUIT_SPECIES, get_due_tasks, get_urgency_color 
+from crud_fruit import ( 
+    add_fruit_plant, get_fruit_plants, delete_fruit_plant, 
+    log_pruning, get_pruning_logs_for_plant, delete_pruning_log 
+)
 
 # Configure page layout and styling
 st.set_page_config(layout="wide", page_title="Crop Tracker", initial_sidebar_state="expanded")
@@ -80,7 +85,7 @@ if 'nav_choice' not in st.session_state:
     st.session_state.nav_choice = "Dashboard"
 
 # We use index based on session state to avoid the "cannot be modified after instantiation" error
-page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Yield Tracker"]
+page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Yield Tracker", "Fruit and Pruning"]
 current_index = page_list.index(st.session_state.nav_choice)
 
 page = st.sidebar.radio("Go to", page_list, index=current_index, label_visibility="collapsed")
@@ -649,3 +654,172 @@ elif page == "Yield Tracker":
                                 st.rerun()
             else:
                 st.info("No yield data matching the selected filters.")
+
+elif page == "Fruit and Pruning": 
+    st.header("🍎 Fruit Trees & Bushes — Pruning Tracker") 
+    st.markdown( 
+        "<p class='help-text'>ℹ️ Track pruning tasks for your fruit trees and bushes. " 
+        "Add each plant once, then log pruning events as you complete them.</p>", 
+        unsafe_allow_html=True 
+    ) 
+
+    import datetime 
+    current_month = datetime.date.today().month 
+
+    # ── Add a new plant ────────────────────────────────────────── 
+    with st.expander("➕ Add a Fruit Plant", expanded=False): 
+        with st.form("add_fruit_plant"): 
+            species = st.selectbox( 
+                "Species", 
+                list(FRUIT_SPECIES.keys()), 
+                help="Select the fruit type. Each species has pre-loaded pruning guidance." 
+            ) 
+            label = st.text_input( 
+                "Your label for this plant (optional)", 
+                placeholder="e.g. Old apple by the shed, Front garden cherry", 
+                help="Give this plant a name so you can tell it apart if you have more than one of the same species." 
+            ) 
+            planted_year = st.number_input( 
+                "Year planted (optional)", 
+                min_value=1900, max_value=datetime.date.today().year, 
+                value=datetime.date.today().year, step=1 
+            ) 
+            plant_notes = st.text_area( 
+                "General notes", 
+                placeholder="e.g. Never pruned by previous owner. Approx 5m tall.", 
+                help="Anything useful to remember about this specific plant." 
+            ) 
+            if st.form_submit_button("Add Plant", type="primary"): 
+                add_fruit_plant(db, species, label or None, planted_year or None, plant_notes or None) 
+                st.success(f"✅ Added {species}{' — ' + label if label else ''}!") 
+                st.rerun() 
+
+    st.divider() 
+
+    # ── Load all plants ─────────────────────────────────────────── 
+    fruit_plants = get_fruit_plants(db) 
+
+    if not fruit_plants: 
+        st.info("No fruit plants added yet. Use the form above to add your first plant.") 
+    else: 
+        # ── Tasks due this month (summary across all plants) ────── 
+        st.subheader(f"📅 Tasks Due This Month") 
+        due_this_month = [] 
+        for plant in fruit_plants: 
+            for task in get_due_tasks(plant.species, current_month): 
+                due_this_month.append((plant, task)) 
+
+        if due_this_month: 
+            for plant, task in due_this_month: 
+                species_info = FRUIT_SPECIES[plant.species] 
+                label_str = f" — {plant.label}" if plant.label else "" 
+                urgency_icon = get_urgency_color(task["urgency"]) 
+                st.markdown( 
+                    f"{urgency_icon} **{species_info['icon']} {plant.species}{label_str}**: " 
+                    f"{task['name']} *({task['month_label']})*" 
+                ) 
+        else: 
+            st.success("✅ No pruning tasks due this month for your plants.") 
+
+        st.divider() 
+
+        # ── Per-plant detail ────────────────────────────────────── 
+        st.subheader("🌳 Your Plants") 
+        for plant in fruit_plants: 
+            species_info = FRUIT_SPECIES.get(plant.species, {}) 
+            icon = species_info.get("icon", "🌿") 
+            label_str = f" — {plant.label}" if plant.label else "" 
+            year_str = f" (planted {plant.planted_year})" if plant.planted_year else "" 
+
+            with st.expander(f"{icon} {plant.species}{label_str}{year_str}", expanded=False): 
+
+                # Species description 
+                st.markdown( 
+                    f"<p class='help-text'>{species_info.get('description', '')}</p>", 
+                    unsafe_allow_html=True 
+                ) 
+                if plant.notes: 
+                    st.markdown(f"📝 *{plant.notes}*") 
+
+                st.write("---") 
+
+                # ── Pruning task list with log button ───────────── 
+                st.subheader("📋 Pruning Tasks") 
+                logs = get_pruning_logs_for_plant(db, plant.id) 
+                last_done = {log.task_key: log.done_date for log in logs} 
+
+                for task in species_info.get("tasks", []): 
+                    is_due = current_month in task["months"] 
+                    urgency_icon = get_urgency_color(task["urgency"]) 
+                    due_badge = " 🔔 **Due now**" if is_due else "" 
+                    last_str = ( 
+                        f" · Last done: **{last_done[task['key']]}**" 
+                        if task["key"] in last_done else " · *Never logged*" 
+                    ) 
+
+                    st.markdown( 
+                        f"{urgency_icon} **{task['name']}** " 
+                        f"*({task['month_label']} · {task['type']})*" 
+                        f"{due_badge}{last_str}" 
+                    ) 
+                    # Guidance in a nested expander — unobtrusive but always accessible 
+                    with st.expander(f"ℹ️ Guidance: {task['name']}", expanded=False): 
+                        st.markdown(task["guidance"]) 
+                        st.markdown( 
+                            f"<p class='help-text'>🔧 Tools: {task['tool_tip']}</p>", 
+                            unsafe_allow_html=True 
+                        ) 
+
+                    # Log completion form inline 
+                    with st.form(f"log_{plant.id}_{task['key']}"): 
+                        col_date, col_note, col_btn = st.columns([2, 3, 1]) 
+                        with col_date: 
+                            log_date = st.date_input( 
+                                "Date done", 
+                                datetime.date.today(), 
+                                key=f"ld_{plant.id}_{task['key']}" 
+                            ) 
+                        with col_note: 
+                            log_note = st.text_input( 
+                                "Notes (optional)", 
+                                placeholder="e.g. Removed 3 large crossing branches, ~20% crown", 
+                                key=f"ln_{plant.id}_{task['key']}" 
+                            ) 
+                        with col_btn: 
+                            st.markdown("<br>", unsafe_allow_html=True) 
+                            if st.form_submit_button("✅ Log"): 
+                                log_pruning( 
+                                    db, plant.id, task["key"], 
+                                    log_date, log_note or None 
+                                ) 
+                                st.success("Logged!") 
+                                st.rerun() 
+
+                # ── Pruning history ─────────────────────────────── 
+                if logs: 
+                    st.write("---") 
+                    st.subheader("📜 Pruning History") 
+                    for log in sorted(logs, key=lambda l: l.done_date, reverse=True): 
+                        task_name = next( 
+                            (t["name"] for t in species_info.get("tasks", []) 
+                             if t["key"] == log.task_key), 
+                            log.task_key 
+                        ) 
+                        note_str = f" — {log.notes}" if log.notes else "" 
+                        col_hist, col_del = st.columns([5, 1]) 
+                        with col_hist: 
+                            st.markdown(f"**{log.done_date}** · {task_name}{note_str}") 
+                        with col_del: 
+                            if st.button("🗑️", key=f"del_log_{log.id}"): 
+                                delete_pruning_log(db, log.id) 
+                                st.rerun() 
+
+                # ── Delete plant ────────────────────────────────── 
+                st.write("---") 
+                if st.button( 
+                    f"🗑️ Remove {plant.species}{label_str} from tracker", 
+                    key=f"del_plant_{plant.id}", 
+                    use_container_width=True 
+                ): 
+                    delete_fruit_plant(db, plant.id) 
+                    st.rerun() 

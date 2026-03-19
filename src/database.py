@@ -121,6 +121,29 @@ class Yield(Base):
     def __repr__(self):
         return f"<Yield(weight={self.weight_kg}kg, date={self.harvest_date})>"
 
+class FruitPlant(Base): 
+    __tablename__ = 'fruit_plants' 
+
+    id = Column(Integer, primary_key=True) 
+    species = Column(String, nullable=False)   # e.g. "Apple" 
+    label = Column(String)                     # user's own name, e.g. "Old apple, back garden" 
+    planted_year = Column(Integer)             # optional, for context 
+    notes = Column(Text)                       # general notes about this plant 
+
+    pruning_logs = relationship("PruningLog", back_populates="plant", 
+                                cascade="all, delete-orphan") 
+
+class PruningLog(Base): 
+    __tablename__ = 'pruning_logs' 
+
+    id = Column(Integer, primary_key=True) 
+    plant_id = Column(Integer, ForeignKey('fruit_plants.id'), nullable=False) 
+    task_key = Column(String, nullable=False)  # matches key in FRUIT_SPECIES dict 
+    done_date = Column(Date, nullable=False) 
+    notes = Column(Text) 
+
+    plant = relationship("FruitPlant", back_populates="pruning_logs")
+
 def create_db_and_tables():
     """Initialize database - Alembic handles migrations"""
     Base.metadata.create_all(engine)
