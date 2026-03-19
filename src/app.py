@@ -57,12 +57,20 @@ st.title("🌱 Crop Tracker")
 st.markdown("*Track your home garden's growth, yields, and performance year over year*")
 
 # Initialize database and seed data if not already done
-if not os.path.exists("./crop_tracker.db"):
+# For PostgreSQL/Supabase, we rely on create_db_and_tables to be safe
+try:
+    # Always try to create tables if they don't exist
     create_db_and_tables()
-    db = SessionLocal()
-    seed_data(db)
-    db.close()
-    st.success("✅ Database initialized with Crop Registry templates!")
+    
+    # Check if we should seed (only if it's a fresh DB)
+    db_init = next(get_db())
+    if not get_templates(db_init):
+        seed_data(db_init)
+        st.success("✅ Database initialized with Crop Registry templates!")
+    db_init.close()
+except Exception as e:
+    # Don't halt the app if seeding fails, but log it
+    print(f"Database initialization info: {e}")
 
 st.sidebar.header("📍 Navigation")
 st.sidebar.markdown("---")
