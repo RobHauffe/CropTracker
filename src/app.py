@@ -356,9 +356,38 @@ elif page == "Crop Registry":
                     st.write(f"**📦 Last Harvest:** {t.expected_days_to_last_harvest}d")
                 if t.notes:
                     st.markdown(f"**📝 Notes:** {t.notes}")
-                if st.button(f"Delete {t.name}{variety_str}", key=f"del_t_{t.id}", use_container_width=True):
-                    delete_template(db, t.id)
-                    st.rerun()
+                
+                col_actions = st.columns(2)
+                with col_actions[0]:
+                    with st.popover(f"✏️ Edit {t.name}", use_container_width=True):
+                        with st.form(f"edit_t_{t.id}"):
+                            edit_name = st.text_input("Crop Name", value=t.name)
+                            edit_variety = st.text_input("Variety", value=t.variety or "")
+                            edit_loc = st.selectbox("Sow Location", ["Indoor", "Direct outside", "Grow bag"], 
+                                                   index=["Indoor", "Direct outside", "Grow bag"].index(t.sow_location) if t.sow_location in ["Indoor", "Direct outside", "Grow bag"] else 0)
+                            edit_germ = st.number_input("Days to Germination", value=t.expected_days_to_germination or 0, min_value=0)
+                            edit_trans = st.number_input("Days to Transplant", value=t.expected_days_to_transplant or 0, min_value=0)
+                            edit_h_start = st.number_input("Days to First Harvest", value=t.expected_days_to_first_harvest or 0, min_value=0)
+                            edit_h_end = st.number_input("Days to Last Harvest", value=t.expected_days_to_last_harvest or 0, min_value=0)
+                            edit_notes = st.text_area("Notes", value=t.notes or "")
+                            
+                            if st.form_submit_button("Update Template", type="primary"):
+                                update_template(db, t.id, {
+                                    "name": edit_name, "variety": edit_variety or None, 
+                                    "sow_location": edit_loc,
+                                    "expected_days_to_germination": edit_germ,
+                                    "expected_days_to_transplant": edit_trans,
+                                    "expected_days_to_first_harvest": edit_h_start,
+                                    "expected_days_to_last_harvest": edit_h_end,
+                                    "notes": edit_notes or None
+                                })
+                                st.success("✅ Updated!")
+                                st.rerun()
+                
+                with col_actions[1]:
+                    if st.button(f"Delete {t.name}{variety_str}", key=f"del_t_{t.id}", use_container_width=True):
+                        delete_template(db, t.id)
+                        st.rerun()
 
 elif page == "Active Cultivations":
     st.header("🌾 Active Cultivations")
@@ -385,16 +414,16 @@ elif page == "Active Cultivations":
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     if c.predicted_germination_date:
-                        st.metric("Germination", c.predicted_germination_date, delta=f"{(c.predicted_germination_date - datetime.date.today()).days} days")
+                        st.metric("Germination", str(c.predicted_germination_date), delta=f"{(c.predicted_germination_date - datetime.date.today()).days} days")
                 with col2:
                     if c.predicted_transplant_date:
-                        st.metric("Transplant", c.predicted_transplant_date, delta=f"{(c.predicted_transplant_date - datetime.date.today()).days} days")
+                        st.metric("Transplant", str(c.predicted_transplant_date), delta=f"{(c.predicted_transplant_date - datetime.date.today()).days} days")
                 with col3:
                     if c.predicted_first_harvest_date:
-                        st.metric("First Harvest", c.predicted_first_harvest_date, delta=f"{(c.predicted_first_harvest_date - datetime.date.today()).days} days")
+                        st.metric("First Harvest", str(c.predicted_first_harvest_date), delta=f"{(c.predicted_first_harvest_date - datetime.date.today()).days} days")
                 with col4:
                     if c.predicted_last_harvest_date:
-                        st.metric("Last Harvest", c.predicted_last_harvest_date, delta=f"{(c.predicted_last_harvest_date - datetime.date.today()).days} days")
+                        st.metric("Last Harvest", str(c.predicted_last_harvest_date), delta=f"{(c.predicted_last_harvest_date - datetime.date.today()).days} days")
                 
                 st.write("---")
                 st.subheader("✏️ Update Actual Dates")
