@@ -1,0 +1,35 @@
+# Streamlit secrets (NEVER commit to GitHub)
+.streamlit/secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Local database file
+crop_tracker.db
+
+# Virtual environment
+venv/
+ENV/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Alembic
+alembic/__pycache__/
+migrations/__pycache__/
