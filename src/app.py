@@ -245,7 +245,11 @@ elif page == "Timeline":
                 timeline_data.append(dict(Task=label, Start=c.sow_date, Finish=c.predicted_germination_date, Resource="Germination"))
             
             if c.predicted_transplant_date:
-                timeline_data.append(dict(Task=label, Start=c.sow_date, Finish=c.predicted_transplant_date, Resource="Transplant"))
+                # The growth phase (indoor/pot) starts after germination and ends at transplant
+                start_date = c.predicted_germination_date if c.predicted_germination_date else c.sow_date
+                # Only add if there's actually a duration to show
+                if c.predicted_transplant_date > start_date:
+                    timeline_data.append(dict(Task=label, Start=start_date, Finish=c.predicted_transplant_date, Resource="Growth (to Transplant)"))
             
             if c.predicted_first_harvest_date:
                 finish = c.predicted_last_harvest_date if c.predicted_last_harvest_date else c.predicted_first_harvest_date + datetime.timedelta(days=14)
@@ -254,7 +258,11 @@ elif page == "Timeline":
         if timeline_data:
             df = pd.DataFrame(timeline_data)
             fig = px.timeline(df, x_start="Start", x_end="Finish", y="Task", color="Resource",
-                            color_discrete_map={"Germination": "#3498db", "Transplant": "#f39c12", "Harvest": "#27ae60"})
+                            color_discrete_map={
+                                "Germination": "#3498db", 
+                                "Growth (to Transplant)": "#f39c12", 
+                                "Harvest": "#27ae60"
+                            })
             fig.update_yaxes(autorange="reversed")
             fig.update_layout(height=500)
             st.plotly_chart(fig, use_container_width=True)
