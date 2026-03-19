@@ -39,8 +39,11 @@ except (KeyError, FileNotFoundError):
 if "postgresql" in DATABASE_URL:
     connect_args = {}
     
+    # Check for both driver name in URL and driver string in secret
+    is_pg8000 = "pg8000" in DATABASE_URL
+    
     # pg8000 needs ssl_context=True and doesn't support connect_timeout in connect_args
-    if "pg8000" in DATABASE_URL:
+    if is_pg8000:
         connect_args["ssl_context"] = True
     else:
         # psycopg2 supports connect_timeout
