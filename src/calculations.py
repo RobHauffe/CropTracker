@@ -6,7 +6,7 @@ def calculate_predicted_dates(cultivation):
         if template.expected_days_to_germination is not None:
             cultivation.predicted_germination_date = cultivation.sow_date + timedelta(days=template.expected_days_to_germination)
         
-        if template.sow_location == 'Indoors' and template.expected_days_to_transplant is not None:
+        if template.expected_days_to_transplant is not None and template.expected_days_to_transplant > 0:
             cultivation.predicted_transplant_date = cultivation.sow_date + timedelta(days=template.expected_days_to_transplant)
         
         if template.expected_days_to_first_harvest is not None:

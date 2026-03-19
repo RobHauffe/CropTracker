@@ -24,6 +24,13 @@ def update_template(db: Session, template_id: int, template_data: dict):
             setattr(db_template, key, value)
         db.commit()
         db.refresh(db_template)
+        
+        # Also update all active cultivations linked to this template
+        cultivations = db.query(Cultivation).filter(Cultivation.template_id == template_id).all()
+        for cultivation in cultivations:
+            calculate_predicted_dates(cultivation)
+        db.commit()
+        
     return db_template
 
 def delete_template(db: Session, template_id: int):
