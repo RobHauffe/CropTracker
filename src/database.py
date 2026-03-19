@@ -8,9 +8,11 @@ import os
 # Load DATABASE_URL from Streamlit secrets or environment variable
 try:
     DATABASE_URL = st.secrets["DATABASE_URL"]
+    print(f"✅ Using Streamlit secret DATABASE_URL")
 except (KeyError, FileNotFoundError):
     # Fallback to environment variable for local development or initial deployment
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./crop_tracker.db")
+    print(f"⚠️ SECRET NOT FOUND - Using fallback: {DATABASE_URL[:50]}..." if "postgresql" in DATABASE_URL else f"⚠️ Using SQLite fallback")
 
 engine = create_engine(DATABASE_URL)
 
