@@ -1,13 +1,20 @@
 import streamlit as st
-from sqlalchemy import create_engine
-
-# Load DATABASE_URL from Streamlit secrets
-DATABASE_URL = st.secrets["DATABASE_URL"]
-engine = create_engine(DATABASE_URL)
-
+from sqlalchemy import create_engine, Column, Integer, String, Date, Text, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import datetime
+import os
+
+# Load DATABASE_URL from Streamlit secrets or environment variable
+try:
+    DATABASE_URL = st.secrets["DATABASE_URL"]
+except (KeyError, FileNotFoundError):
+    # Fallback to environment variable for local development or initial deployment
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./crop_tracker.db")
+
+engine = create_engine(DATABASE_URL)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
