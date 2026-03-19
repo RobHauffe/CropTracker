@@ -22,11 +22,11 @@ try:
         
         # Construct the URL with pooler settings
         # Note: Supabase pooler hostname is often different (e.g. aws-0-region.pooler.supabase.com)
-        if "pg8000" in db_driver:
-            # pg8000 uses 'ssl' instead of 'sslmode'
-            DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?ssl=true"
-        else:
-            DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+        DATABASE_URL = f"{db_driver}://{db_username}:{db_password}@{db_host}:{db_port}/{db_name}"
+        
+        # SSL settings are handled via connect_args for pg8000 compatibility
+        if "psycopg2" in db_driver:
+            DATABASE_URL += "?sslmode=require"
     
     print(f"✅ Using Streamlit secret for database connection")
 except (KeyError, FileNotFoundError):
@@ -37,13 +37,19 @@ except (KeyError, FileNotFoundError):
 # engine = create_engine(DATABASE_URL)
 # For PostgreSQL/Supabase, we add pooling and statement timeout settings
 if "postgresql" in DATABASE_URL:
+    connect_args = {"connect_timeout": 10}
+    
+    # pg8000 needs ssl_context=True passed in connect_args
+    if "pg8000" in DATABASE_URL:
+        connect_args["ssl_context"] = True
+        
     engine = create_engine(
         DATABASE_URL,
         pool_size=5,
         max_overflow=10,
         pool_timeout=30,
         pool_recycle=1800,
-        connect_args={"connect_timeout": 10}
+        connect_args=connect_args
     )
 else:
     engine = create_engine(DATABASE_URL)
