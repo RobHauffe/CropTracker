@@ -175,7 +175,12 @@ if page == "Dashboard":
                 st.write("None")
 
             st.subheader("✄️ Needs Pricking Out")
-            st.markdown("<p class='help-text'>Seedlings ready to be moved to larger containers</p>", unsafe_allow_html=True)
+            st.markdown(
+                "<p class='help-text'>Seedlings ready to be moved into individual pots. "
+                "Prick out when the first TRUE leaves are well developed (not the round seed leaves/cotyledons). "
+                "Handle by the seed leaf, never by the stem — a damaged stem is fatal, a damaged seed leaf is not.</p>",
+                unsafe_allow_html=True
+            )
             needs_pricking = [
                 c for c in cultivations
                 if c.predicted_germination_date and c.predicted_germination_date <= today
@@ -389,10 +394,53 @@ elif page == "Active Cultivations":
                 st.write("---")
                 st.subheader("✏️ Update Actual Dates")
                 with st.form(f"actuals_{c.id}"):
-                    act_germ = st.date_input("Actual Germination", value=c.actual_germination_date if c.actual_germination_date else None, key=f"ag_{c.id}")
-                    act_trans = st.date_input("Actual Transplant", value=c.actual_transplant_date if c.actual_transplant_date else None, key=f"at_{c.id}")
-                    act_h_start = st.date_input("Actual First Harvest", value=c.actual_first_harvest_date if c.actual_first_harvest_date else None, key=f"ahs_{c.id}")
-                    act_h_end = st.date_input("Actual Last Harvest", value=c.actual_last_harvest_date if c.actual_last_harvest_date else None, key=f"ahe_{c.id}")
+                    act_germ = st.date_input(
+                        "Actual Germination",
+                        value=c.actual_germination_date if c.actual_germination_date else None,
+                        key=f"ag_{c.id}",
+                        help=(
+                            "Mark this date when you see the seedling's first shoot breaking the soil surface. "
+                            "For pre-germinated seeds: mark when the radicle (white root tip) first appears on the paper towel — "
+                            "typically 3–7 days after placing seeds in a warm, damp environment. "
+                            "Sow into compost as soon as the radicle is 1–3 mm; don't wait until it's long or it becomes fragile."
+                        )
+                    )
+                    act_trans = st.date_input(
+                        "Actual Transplant",
+                        value=c.actual_transplant_date if c.actual_transplant_date else None,
+                        key=f"at_{c.id}",
+                        help=(
+                            "Mark this date when you move seedlings to their final outdoor location. "
+                            "Seedlings are ready to transplant when they have developed their first pair of TRUE leaves — "
+                            "these are the second set of leaves to appear, with the characteristic shape of the crop. "
+                            "The first leaves (cotyledons) are round and generic-looking; ignore those for timing. "
+                            "Always harden off first: place plants outside for increasing periods over 5–7 days before final transplant. "
+                            "For indoor-to-outdoor moves, wait until after last frost (mid-May in Brandenburg)."
+                        )
+                    )
+                    act_h_start = st.date_input(
+                        "Actual First Harvest",
+                        value=c.actual_first_harvest_date if c.actual_first_harvest_date else None,
+                        key=f"ahs_{c.id}",
+                        help=(
+                            "Mark this date on your first harvest from this cultivation. "
+                            "Harvest indicators vary by crop: tomatoes when fully coloured and slightly soft to touch; "
+                            "courgettes at 15–20 cm before they become marrows; lettuce before it bolts (sends up a flower stalk); "
+                            "peas when pods are plump but before they yellow; root vegetables once shoulders are visible above soil. "
+                            "For mushrooms: harvest when caps are still curled inward, before they flatten and release spores."
+                        )
+                    )
+                    act_h_end = st.date_input(
+                        "Actual Last Harvest",
+                        value=c.actual_last_harvest_date if c.actual_last_harvest_date else None,
+                        key=f"ahe_{c.id}",
+                        help=(
+                            "Mark this date when the plant is fully spent and you remove it. "
+                            "Signs the harvest window is ending: leaves yellowing, fruit quality dropping, plant bolting or setting seed. "
+                            "For succession crops like radishes or lettuce, clear spent plants promptly to free up space for the next sowing. "
+                            "For tomatoes and courgettes, remove plants before first frost regardless of remaining fruit."
+                        )
+                    )
                     
                     if st.form_submit_button("Save Updates", type="primary"):
                         update_cultivation(db, c.id, {
