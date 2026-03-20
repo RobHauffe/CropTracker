@@ -923,9 +923,23 @@ elif page == "Fruit and Pruning":
                 x_start="Start", 
                 x_end="Finish", 
                 y="Task", 
-                color="Species",
-                hover_data=["Resource"],
-                title="Yearly Pruning Windows"
+                color="Resource",
+                hover_data=["Resource", "Species"],
+                title="Yearly Pruning Windows",
+                color_discrete_map={
+                    "Winter Renovation Prune": "#3498db",  # Blue for winter
+                    "Winter Prune": "#3498db",
+                    "Summer Tidy — Water Shoots": "#f1c40f", # Yellow for summer
+                    "Fruit Thinning": "#2ecc71",             # Green for fruit tasks
+                    "Summer Prune (Post-Harvest)": "#e67e22",# Orange for post-harvest
+                    "Post-Harvest Prune": "#e67e22",
+                    "Post-Harvest Prune (Summer Varieties)": "#e67e22",
+                    "Post-Harvest Prune (Autumn Varieties)": "#d35400",
+                    "Disease & Silver Leaf Check": "#e74c3c",# Red for disease checks
+                    "Identify Variety Type": "#95a5a6",      # Grey for one-off
+                    "Summer Shoot Pinch": "#27ae60",
+                    "New Cane Tip Pruning": "#16a085"
+                }
             )
             
             # Add vertical "Today" line
