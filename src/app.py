@@ -860,3 +860,100 @@ elif page == "Fruit and Pruning":
                 ): 
                     delete_fruit_plant(db, plant.id) 
                     st.rerun() 
+
+        # ── Pruning Timeline (Gantt Chart) ────────────────────────
+        st.divider()
+        st.subheader("📅 Pruning Timeline — Full Year")
+        st.markdown(
+            "<p class='help-text'>ℹ️ Visualize pruning windows for all your plants. "
+            "The vertical line indicates today's date.</p>",
+            unsafe_allow_html=True
+        )
+
+        timeline_data = []
+        current_year = datetime.date.today().year
+        
+        for plant in fruit_plants:
+            species_info = FRUIT_SPECIES.get(plant.species, {})
+            label_str = f" — {plant.label}" if plant.label else ""
+            display_name = f"{plant.species}{label_str}"
+            
+            for task in species_info.get("tasks", []):
+                # We need to handle month ranges that might wrap around or be disconnected
+                # For simplicity in a yearly Gantt, we'll create a segment for each continuous month block
+                months = sorted(task["months"])
+                if not months:
+                    continue
+                
+                # Group continuous months into segments
+                segments = []
+                if months:
+                    start_m = months[0]
+                    prev_m = months[0]
+                    for m in months[1:]:
+                        if m != prev_m + 1:
+                            segments.append((start_m, prev_m))
+                            start_m = m
+                        prev_m = m
+                    segments.append((start_m, prev_m))
+                
+                for start_m, end_m in segments:
+                    # Create start and end dates for the segment in the current year
+                    # Start of the start month
+                    start_date = datetime.date(current_year, start_m, 1)
+                    # End of the end month (first day of next month - 1 day)
+                    if end_m == 12:
+                        end_date = datetime.date(current_year, 12, 31)
+                    else:
+                        end_date = datetime.date(current_year, end_m + 1, 1) - datetime.timedelta(days=1)
+                    
+                    timeline_data.append(dict(
+                        Task=display_name,
+                        Start=start_date,
+                        Finish=end_date,
+                        Resource=task["name"],
+                        Species=plant.species
+                    ))
+
+        if timeline_data:
+            df = pd.DataFrame(timeline_data)
+            # Create the Gantt chart
+            fig = px.timeline(
+                df, 
+                x_start="Start", 
+                x_end="Finish", 
+                y="Task", 
+                color="Species",
+                hover_data=["Resource"],
+                title="Yearly Pruning Windows"
+            )
+            
+            # Add vertical "Today" line
+            today = datetime.date.today()
+            fig.add_vline(x=today.strftime("%Y-%m-%d"), line_width=3, line_dash="dash", line_color="red")
+            fig.add_annotation(
+                x=today.strftime("%Y-%m-%d"), 
+                y=1.05, 
+                yref="paper",
+                text="Today", 
+                showarrow=False, 
+                font=dict(color="red", size=12)
+            )
+
+            # Set x-axis range to the full year
+            fig.update_xaxes(
+                range=[f"{current_year}-01-01", f"{current_year}-12-31"],
+                dtick="M1",  # Tick every month
+                tickformat="%b" # Month name abbreviation
+            )
+            
+            fig.update_yaxes(autorange="reversed")
+            fig.update_layout(
+                height=400 + (len(fruit_plants) * 30), # Scale height with number of plants
+                showlegend=True,
+                margin=dict(l=20, r=20, t=60, b=20)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No plants or tasks found to display on the timeline.")
