@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import CropTemplate, Cultivation, Yield
 from calculations import calculate_predicted_dates
 import datetime
@@ -54,7 +54,7 @@ def start_cultivation(db: Session, template_id: int, sow_date: datetime.date, no
     return cultivation
 
 def get_cultivations(db: Session):
-    return db.query(Cultivation).all()
+    return db.query(Cultivation).options(joinedload(Cultivation.template)).all()
 
 def get_cultivation_by_id(db: Session, cultivation_id: int):
     return db.query(Cultivation).filter(Cultivation.id == cultivation_id).first()
@@ -94,7 +94,7 @@ def create_yield(db: Session, cultivation_id: int, weight_kg: float, harvest_dat
     return yield_record
 
 def get_yields(db: Session):
-    return db.query(Yield).all()
+    return db.query(Yield).options(joinedload(Yield.cultivation)).all()
 
 def get_yield_by_id(db: Session, yield_id: int):
     return db.query(Yield).filter(Yield.id == yield_id).first()
