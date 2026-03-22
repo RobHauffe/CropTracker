@@ -76,6 +76,14 @@ def delete_cultivation(db: Session, cultivation_id: int):
         db.commit()
     return db_cultivation
 
+def update_cultivation_plot(db: Session, cultivation_id: int, plot_address: str):
+    db_cultivation = get_cultivation_by_id(db, cultivation_id)
+    if db_cultivation:
+        db_cultivation.plot_address = plot_address
+        db.commit()
+        db.refresh(db_cultivation)
+    return db_cultivation
+
 # --- Yield CRUD ---
 def create_yield(db: Session, cultivation_id: int, weight_kg: float, harvest_date: datetime.date, notes: str = None):
     yield_record = Yield(cultivation_id=cultivation_id, weight_kg=weight_kg, harvest_date=harvest_date, notes=notes)

@@ -103,6 +103,7 @@ class Cultivation(Base):
 
     notes = Column(Text)
     is_archived = Column(Integer, default=0) # 0 = Active, 1 = Archived
+    plot_address = Column(String) # e.g. "Back-3" or "Front-4,Front-5"
 
     template = relationship("CropTemplate", back_populates="cultivations")
     yields = relationship("Yield", back_populates="cultivation", cascade="all, delete-orphan")
@@ -161,6 +162,8 @@ def create_db_and_tables():
                 conn.execute(text("ALTER TABLE cultivations ADD COLUMN IF NOT EXISTS notes TEXT"))
                 # Add is_archived column if missing
                 conn.execute(text("ALTER TABLE cultivations ADD COLUMN IF NOT EXISTS is_archived INTEGER DEFAULT 0"))
+                # Add plot_address column if missing
+                conn.execute(text("ALTER TABLE cultivations ADD COLUMN IF NOT EXISTS plot_address TEXT"))
                 conn.commit()
                 print("✅ Database migrations (cultivations) checked/applied")
             except Exception as e:

@@ -3,7 +3,7 @@ from database import create_db_and_tables, seed_data, SessionLocal, CropTemplate
 from crud import (
     create_template, get_templates, update_template, delete_template,
     start_cultivation, get_cultivations, update_cultivation, delete_cultivation,
-    get_template_by_id, get_cultivation_by_id,
+    get_template_by_id, get_cultivation_by_id, update_cultivation_plot,
     create_yield, get_yields, get_yield_by_id, get_yields_by_cultivation, get_yields_by_crop, update_yield, delete_yield
 )
 import os
@@ -85,7 +85,7 @@ if 'nav_choice' not in st.session_state:
     st.session_state.nav_choice = "Dashboard"
 
 # We use index based on session state to avoid the "cannot be modified after instantiation" error
-page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Yield Tracker", "Fruit and Pruning", "Cultivation Archive"]
+page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Raised Bed Map", "Yield Tracker", "Fruit and Pruning", "Cultivation Archive"]
 current_index = page_list.index(st.session_state.nav_choice)
 
 page = st.sidebar.radio("Go to", page_list, index=current_index, label_visibility="collapsed")
@@ -710,6 +710,290 @@ elif page == "Yield Tracker":
                                 st.rerun()
             else:
                 st.info("No yield data matching the selected filters.")
+
+elif page == "Raised Bed Map":
+    st.header("🗺️ Raised Bed Map")
+    st.markdown("<p class='help-text'>ℹ️ Visual top-down map of your raised bed layout and plot assignments</p>", unsafe_allow_html=True)
+
+    # ── SVG Configuration ──────────────────────────────────────────
+    # Scale: 1 cm = 1.8 px
+    # Main bar cell: 70cm x 30cm -> 126px x 54px
+    # Protrusion cell: 45cm x 30cm -> 81px x 54px
+    
+    cell_w_main = 126
+    cell_w_prot = 81
+    cell_h = 54
+    gap = 10
+    
+    # Coordinates for all 18 cells
+    # Row: Back (0), Front (1)
+    # Col: 1-8 (Main Bar), 9 (Protrusion)
+    cells = {}
+    
+    # Main Bar (8x2)
+    for r_idx, row_label in enumerate(["Back", "Front"]):
+        y = r_idx * (cell_h + gap)
+        for c_idx in range(1, 9):
+            x = (c_idx - 1) * cell_w_main
+            cells[f"{row_label}-{c_idx}"] = {"x": x, "y": y, "w": cell_w_main, "h": cell_h}
+            
+    # Protrusion (1x2) - attached to the right of column 8, aligned to Front row, extending downward
+    # R-Back is at same Y as Front row, x is after column 8
+    # R-Front is below R-Back
+    x_prot = 8 * cell_w_main
+    y_prot_back = cell_h + gap
+    y_prot_front = y_prot_back + cell_h + gap
+    
+    cells["R-Back"] = {"x": x_prot, "y": y_prot_back, "w": cell_w_prot, "h": cell_h}
+    cells["R-Front"] = {"x": x_prot, "y": y_prot_front, "w": cell_w_prot, "h": cell_h}
+
+    # Total SVG Dimensions
+    svg_width = (8 * cell_w_main) + cell_w_prot + 10
+    svg_height = y_prot_front + cell_h + 10
+
+    # ── Load Cultivations and Map to Cells ──────────────────────────
+    cultivations = get_cultivations(db)
+    active_cultivations = [c for c in cultivations if getattr(c, 'is_archived', 0) == 0]
+    
+    # Map cell address to cultivation
+    cell_assignments = {}
+    for c in active_cultivations:
+        if c.plot_address:
+            addresses = c.plot_address.split(',')
+            for addr in addresses:
+                addr = addr.strip()
+                if addr in cells:
+                    cell_assignments[addr] = c
+
+    # ── Rendering Logic ─────────────────────────────────────────────
+    def get_cell_color(c):
+        if not c: return "#f5f5f0" # Empty
+        
+        today = datetime.date.today()
+        # Stage logic matching timeline
+        if c.actual_last_harvest_date and today > c.actual_last_harvest_date:
+            return "#e74c3c" # Overdue/Finished
+        elif c.predicted_last_harvest_date and today > c.predicted_last_harvest_date and not c.actual_last_harvest_date:
+            return "#e74c3c" # Overdue
+        elif (c.actual_first_harvest_date and today >= c.actual_first_harvest_date) or \
+             (c.predicted_first_harvest_date and today >= c.predicted_first_harvest_date):
+            return "#27ae60" # Harvest
+        elif (c.actual_transplant_date and today >= c.actual_transplant_date) or \
+             (c.predicted_transplant_date and today >= c.predicted_transplant_date):
+            return "#f39c12" # Transplant/Growth
+        elif today >= c.sow_date:
+            return "#3498db" # Germination
+        else:
+            return "#bdc3c7" # Upcoming
+
+    def get_text_color(bg_color):
+        # Simple contrast check
+        if bg_color in ["#3498db", "#27ae60", "#e74c3c"]:
+            return "white"
+        return "#2d5020"
+
+    svg_content = f'<svg width="{svg_width}" height="{svg_height}" viewBox="0 0 {svg_width} {svg_height}" xmlns="http://www.w3.org/2000/svg">'
+    
+    # Draw outer boundary
+    # (Approximation of the L-shape)
+    path_d = f"M 0,0 H {8*cell_w_main} V {cell_h+gap} H {8*cell_w_main+cell_w_prot} V {y_prot_front+cell_h} H {8*cell_w_main} V {2*cell_h+gap} H 0 Z"
+    svg_content += f'<path d="{path_d}" fill="none" stroke="#2d5020" stroke-width="3" />'
+
+    # Track which cultivations we've already rendered labels for (to handle spanning cells)
+    rendered_cultivations = set()
+
+    for addr, dims in cells.items():
+        c = cell_assignments.get(addr)
+        bg_color = get_cell_color(c)
+        text_color = get_text_color(bg_color)
+        
+        # Draw cell
+        svg_content += f'<rect x="{dims["x"]}" y="{dims["y"]}" width="{dims["w"]}" height="{dims["h"]}" fill="{bg_color}" stroke="#2d5020" stroke-width="1.5" />'
+        
+        # Label address
+        svg_content += f'<text x="{dims["x"]+4}" y="{dims["y"]+12}" font-family="sans-serif" font-size="9" fill="#7f8c8d">{addr}</text>'
+        
+        if c and c.id not in rendered_cultivations:
+            # Handle spanning cells
+            display_w = dims["w"]
+            display_x = dims["x"]
+            is_spanning = "," in (c.plot_address or "")
+            
+            if is_spanning:
+                addresses = c.plot_address.split(',')
+                # Check if this is the first cell of the pair
+                if addr == addresses[0].strip():
+                    # Calculate total width if they are horizontal neighbors
+                    # (For this app, we'll just center it in the first cell or handle simple horizontal spanning)
+                    if len(addresses) == 2:
+                        addr2 = addresses[1].strip()
+                        if addr2 in cells:
+                            # If same row, we can span
+                            if cells[addr]["y"] == cells[addr2]["y"]:
+                                display_w = dims["w"] + (cells[addr2]["x"] - dims["x"])
+                else:
+                    # Skip rendering text for the second cell
+                    continue
+
+            rendered_cultivations.add(c.id)
+            
+            # Crop Name
+            crop_name = f"{c.template.name}"
+            if len(crop_name) > 15 and not is_spanning:
+                crop_name = crop_name[:12] + "..."
+            
+            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+30}" font-family="sans-serif" font-weight="bold" font-size="11" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
+            
+            # Next Milestone
+            milestone_text = ""
+            today = datetime.date.today()
+            if not c.actual_germination_date and c.predicted_germination_date:
+                milestone_text = f"Germ: {c.predicted_germination_date.strftime('%d %b')}"
+            elif not c.actual_transplant_date and c.predicted_transplant_date:
+                milestone_text = f"Trans: {c.predicted_transplant_date.strftime('%d %b')}"
+            elif not c.actual_first_harvest_date and c.predicted_first_harvest_date:
+                milestone_text = f"Harvest: {c.predicted_first_harvest_date.strftime('%d %b')}"
+            
+            if milestone_text:
+                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+45}" font-family="sans-serif" font-size="9" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
+
+    svg_content += '</svg>'
+    
+    # Display SVG
+    st.markdown(f'<div style="overflow-x: auto; padding: 10px; background-color: white; border-radius: 8px;">{svg_content}</div>', unsafe_allow_html=True)
+
+    # ── Legend ─────────────────────────────────────────────────────
+    st.write("")
+    legend_cols = st.columns(6)
+    legend_items = [
+        ("#f5f5f0", "Empty"),
+        ("#3498db", "Germination"),
+        ("#f39c12", "Transplant/Growth"),
+        ("#27ae60", "Harvest"),
+        ("#e74c3c", "Overdue/End"),
+        ("#bdc3c7", "Upcoming")
+    ]
+    for i, (color, label) in enumerate(legend_items):
+        with legend_cols[i]:
+            st.markdown(f'<div style="display: flex; align-items: center;"><div style="width: 15px; height: 15px; background-color: {color}; border: 1px solid #999; margin-right: 5px;"></div><span style="font-size: 12px;">{label}</span></div>', unsafe_allow_html=True)
+
+    # ── Plot Assignment UI ─────────────────────────────────────────
+    st.divider()
+    with st.expander("📌 Assign Cultivations to Plots", expanded=True):
+        # Sort: Unassigned first, then by name
+        sorted_cults = sorted(active_cultivations, key=lambda x: (0 if not x.plot_address else 1, x.template.name.lower()))
+        
+        all_addresses = list(cells.keys())
+        
+        for c in sorted_cults:
+            variety_str = f" ({c.template.variety})" if c.template.variety else ""
+            current_addr = c.plot_address or "Unassigned"
+            
+            with st.form(f"assign_{c.id}"):
+                st.write(f"**{c.template.name}{variety_str}** (Sown: {c.sow_date})")
+                
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    mode = st.radio("Assignment Mode", ["Single Cell", "Spans Two Cells"], 
+                                   index=1 if "," in current_addr else 0, key=f"mode_{c.id}", horizontal=True)
+                
+                with col2:
+                    addrs = current_addr.split(",")
+                    if mode == "Single Cell":
+                        new_addr = st.selectbox("Select Plot", ["None"] + all_addresses, 
+                                               index=all_addresses.index(addrs[0].strip()) + 1 if addrs[0].strip() in all_addresses else 0,
+                                               key=f"sel1_{c.id}")
+                        final_address = None if new_addr == "None" else new_addr
+                    else:
+                        sub_col1, sub_col2 = st.columns(2)
+                        with sub_col1:
+                            a1 = st.selectbox("Cell 1", ["None"] + all_addresses, 
+                                             index=all_addresses.index(addrs[0].strip()) + 1 if addrs[0].strip() in all_addresses else 0,
+                                             key=f"sel1_span_{c.id}")
+                        with sub_col2:
+                            a2 = st.selectbox("Cell 2", ["None"] + all_addresses, 
+                                             index=all_addresses.index(addrs[1].strip()) + 1 if len(addrs) > 1 and addrs[1].strip() in all_addresses else 0,
+                                             key=f"sel2_span_{c.id}")
+                        
+                        if a1 == "None" or a2 == "None":
+                            final_address = None
+                        else:
+                            final_address = f"{a1},{a2}"
+                
+                with col3:
+                    st.write("") # Spacer
+                    if st.form_submit_button("Save Plot", type="primary", use_container_width=True):
+                        update_cultivation_plot(db, c.id, final_address)
+                        st.success("Saved!")
+                        st.rerun()
+
+    # ── Rotation Planning Reference ───────────────────────────────
+    with st.expander("🔄 Crop Rotation Reference", expanded=False):
+        rotation_data = [
+            {"Family": "Solanaceae", "Crops in this app": "Tomatoes, Peppers, Chillies, Aubergine, Potatoes", "Min Gap": "3-4 years", "Follows well": "Legumes, Alliums", "Avoid following": "Other Solanaceae", "Notes": "Heavy feeders; potato blight risk; same pests"},
+            {"Family": "Brassica", "Crops in this app": "Kale, Kohlrabi, Pak choi, Asian greens", "Min Gap": "4 years", "Follows well": "Legumes (Nitrogen!)", "Avoid following": "Other Brassicas", "Notes": "Clubroot risk; needs firm soil; high Nitrogen needs"},
+            {"Family": "Legume", "Crops in this app": "Peas, Broad beans, French beans", "Min Gap": "2-3 years", "Follows well": "Roots, Brassicas", "Avoid following": "Legumes", "Notes": "Fixes nitrogen in soil; great before Brassicas"},
+            {"Family": "Root", "Crops in this app": "Carrots, Parsnips, Beetroot", "Min Gap": "3 years", "Follows well": "Any (except Roots)", "Avoid following": "Manured soil", "Notes": "Fresh manure causes forking; light soil best"},
+            {"Family": "Cucurbit", "Crops in this app": "Courgette, Cucumber, Pumpkin, Squash", "Min Gap": "2 years", "Follows well": "Legumes", "Avoid following": "Cucurbits", "Notes": "Very heavy feeders; need lots of organic matter"},
+            {"Family": "Allium", "Crops in this app": "Leeks", "Min Gap": "3-4 years", "Follows well": "Any", "Avoid following": "Alliums", "Notes": "Onion fly/rot risk; good break crop"},
+            {"Family": "Leafy", "Crops in this app": "Lettuce, Spinach, Lamb's lettuce, Chard", "Min Gap": "1-2 years", "Follows well": "Any", "Avoid following": "Leafy", "Notes": "Quick crops; can often fit between others"}
+        ]
+        st.table(rotation_data)
+        
+        st.markdown("""
+        ### 💡 Practical Rotation Advice
+        - **Protrusion (R-Back, R-Front):** Best reserved for **Solanaceae** (chillies, peppers) as it typically gets the most sun exposure.
+        - **The Golden Rule:** **Legumes** should ideally precede **Brassicas** because legumes leave nitrogen in the soil which brassicas crave.
+        - **Space Savers:** Leafy greens (lettuce, spinach) are fast and flexible; use them to fill gaps between longer-term crops.
+        - **Diversity:** Even if you can't follow a perfect 4-year cycle, just ensuring you don't plant the same family in the same spot twice in a row helps significantly.
+        """)
+        
+        st.subheader("⚠️ Rotation Conflict Checker")
+        check_c = st.selectbox("Select a cultivation to check", active_cultivations, 
+                              format_func=lambda x: f"{x.template.name}{' ('+x.template.variety+')' if x.template.variety else ''} (Plot: {x.plot_address or 'N/A'})")
+        
+        if check_c and check_c.plot_address:
+            # Map crop to family (simple mapping for this app)
+            family_map = {
+                "Tomato": "Solanaceae", "Peppers": "Solanaceae", "Aubergine": "Solanaceae", "Potatoes": "Solanaceae",
+                "Kale": "Brassica", "Kohlrabi": "Brassica", "Pak choi": "Brassica", "Asian greens": "Brassica",
+                "Peas": "Legume", "Broad beans": "Legume", "French beans": "Legume",
+                "Carrots": "Root", "Parsnips": "Root", "Beetroot": "Root",
+                "Courgette": "Cucurbit", "Cucumber": "Cucurbit", "Pumpkin": "Cucurbit", "Squash": "Cucurbit",
+                "Leeks": "Allium",
+                "Lettuce": "Leafy", "Spinach": "Leafy", "Lamb's lettuce": "Leafy", "Chard": "Leafy"
+            }
+            
+            def get_family(name):
+                for key, fam in family_map.items():
+                    if key in name: return fam
+                return "Unknown"
+            
+            curr_fam = get_family(check_c.template.name)
+            
+            # Find history for this plot in previous years
+            plot_history = db.query(Cultivation).filter(
+                Cultivation.plot_address == check_c.plot_address,
+                Cultivation.sow_date < datetime.date(check_c.sow_date.year, 1, 1)
+            ).all()
+            
+            if plot_history:
+                last_year = max(c.sow_date.year for c in plot_history)
+                last_year_cults = [c for c in plot_history if c.sow_date.year == last_year]
+                
+                conflicts = []
+                for prev in last_year_cults:
+                    prev_fam = get_family(prev.template.name)
+                    if prev_fam == curr_fam and curr_fam != "Unknown":
+                        conflicts.append(f"{prev.template.name} ({prev_fam})")
+                
+                if conflicts:
+                    st.warning(f"🚨 **Potential Rotation Conflict!** This plot was used for **{', '.join(conflicts)}** in {last_year}. Both are in the **{curr_fam}** family.")
+                else:
+                    st.success(f"✅ **Rotation looks good!** Previous crops in {last_year} were from different families.")
+            else:
+                st.info("ℹ️ No prior season data available for this plot to check rotation.")
 
 elif page == "Fruit and Pruning": 
     st.header("🍎 Fruit Trees & Bushes — Pruning Tracker") 
