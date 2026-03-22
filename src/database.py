@@ -34,31 +34,34 @@ except (KeyError, FileNotFoundError):
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./crop_tracker.db")
     print(f"⚠️ SECRET NOT FOUND - Using fallback: {DATABASE_URL[:50]}..." if "postgresql" in DATABASE_URL else f"⚠️ Using SQLite fallback")
 
-# engine = create_engine(DATABASE_URL)
 # For PostgreSQL/Supabase, we add pooling and statement timeout settings
-if "postgresql" in DATABASE_URL:
-    connect_args = {}
-    
-    # Check for both driver name in URL and driver string in secret
-    is_pg8000 = "pg8000" in DATABASE_URL
-    
-    # pg8000 needs ssl_context=True and doesn't support connect_timeout in connect_args
-    if is_pg8000:
-        connect_args["ssl_context"] = True
+@st.cache_resource
+def get_engine():
+    if "postgresql" in DATABASE_URL:
+        connect_args = {}
+        
+        # Check for both driver name in URL and driver string in secret
+        is_pg8000 = "pg8000" in DATABASE_URL
+        
+        # pg8000 needs ssl_context=True and doesn't support connect_timeout in connect_args
+        if is_pg8000:
+            connect_args["ssl_context"] = True
+        else:
+            # psycopg2 supports connect_timeout
+            connect_args["connect_timeout"] = 10
+            
+        return create_engine(
+            DATABASE_URL,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=30,
+            pool_recycle=1800,
+            connect_args=connect_args
+        )
     else:
-        # psycopg2 supports connect_timeout
-        connect_args["connect_timeout"] = 10
-         
-    engine = create_engine(
-        DATABASE_URL,
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=30,
-        pool_recycle=1800,
-        connect_args=connect_args
-    )
-else:
-    engine = create_engine(DATABASE_URL)
+        return create_engine(DATABASE_URL)
+
+engine = get_engine()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

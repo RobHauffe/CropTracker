@@ -16,6 +16,28 @@ from crud_fruit import (
     log_pruning, get_pruning_logs_for_plant, delete_pruning_log 
 )
 
+# --- Performance Caching Helpers ---
+@st.cache_data(ttl=30)  # cache for 30 seconds 
+def cached_get_templates(): 
+    db = next(get_db()) 
+    result = get_templates(db) 
+    db.close() 
+    return result 
+ 
+@st.cache_data(ttl=30) 
+def cached_get_cultivations(): 
+    db = next(get_db()) 
+    result = get_cultivations(db) 
+    db.close() 
+    return result 
+ 
+@st.cache_data(ttl=30) 
+def cached_get_fruit_plants(): 
+    db = next(get_db()) 
+    result = get_fruit_plants(db) 
+    db.close() 
+    return result 
+
 # Configure page layout and styling
 st.set_page_config(layout="wide", page_title="Crop Tracker", initial_sidebar_state="expanded")
 
@@ -63,16 +85,16 @@ st.markdown("*Track your home garden's growth, yields, and performance year over
 
 # Initialize database and seed data if not already done
 # For PostgreSQL/Supabase, we rely on create_db_and_tables to be safe
+@st.cache_resource 
+def initialise_db(): 
+    create_db_and_tables() 
+    db = next(get_db()) 
+    if not get_templates(db): 
+        seed_data(db) 
+    db.close() 
+ 
 try:
-    # Always try to create tables if they don't exist
-    create_db_and_tables()
-    
-    # Check if we should seed (only if it's a fresh DB)
-    db_init = next(get_db())
-    if not get_templates(db_init):
-        seed_data(db_init)
-        st.success("✅ Database initialized with Crop Registry templates!")
-    db_init.close()
+    initialise_db()
 except Exception as e:
     # Don't halt the app if seeding fails, but log it
     print(f"Database initialization info: {e}")
@@ -128,7 +150,7 @@ if page == "Dashboard":
     
     # Start Seeding/Germination Feature
     st.subheader("🌾 Start Seeding / Germination")
-    templates = get_templates(db)
+    templates = cached_get_templates()
     # Sort templates alphabetically by name
     templates = sorted(templates, key=lambda x: (x.name.lower(), (x.variety or "").lower()))
     
@@ -151,6 +173,7 @@ if page == "Dashboard":
             if templates and selected_option in template_options:
                 template_id = template_options[selected_option]
                 start_cultivation(db, template_id, sow_date, sow_notes)
+                st.cache_data.clear()
                 st.success(f"✅ Started cultivation for {selected_option}!")
                 st.rerun()
             else:
@@ -158,7 +181,7 @@ if page == "Dashboard":
 
     # Dashboard Status
     st.divider()
-    cultivations = get_cultivations(db)
+    cultivations = cached_get_cultivations()
     # Sort cultivations alphabetically by template name
     cultivations = sorted(cultivations, key=lambda x: (x.template.name.lower(), (x.template.variety or "").lower()))
     
@@ -230,7 +253,7 @@ elif page == "Timeline":
     st.header("📈 Active Cultivations Timeline")
     st.markdown("<p class='help-text'>ℹ️ Visualize all your cultivations on a timeline showing germination, transplant, and harvest phases</p>", unsafe_allow_html=True)
     
-    cultivations = get_cultivations(db)
+    cultivations = cached_get_cultivations()
     # Sort cultivations alphabetically for timeline
     cultivations = sorted(cultivations, key=lambda x: (x.template.name.lower(), (x.template.variety or "").lower()))
 
@@ -275,7 +298,7 @@ elif page == "Crop Registry":
     st.markdown("<p class='help-text'>ℹ️ Manage your crop templates. Add new crop types and varieties with expected growth timelines</p>", unsafe_allow_html=True)
     
     with st.expander("➕ Add New Template", expanded=False):
-        templates = get_templates(db)
+        templates = cached_get_templates()
         base_crop_names = sorted(list(set(t.name for t in templates)))
         
         mode = st.radio("Add Mode", ["New Base Crop", "New Variety of Existing Crop"], horizontal=True)
@@ -340,12 +363,13 @@ elif page == "Crop Registry":
                         "expected_days_to_last_harvest": expected_harvest_end,
                         "notes": notes
                     })
+                    st.cache_data.clear()
                     st.success(f"✅ Added {final_name} {variety if variety else ''} to Registry!")
                     st.rerun()
 
     st.divider()
     st.subheader("📚 Registry Templates")
-    templates = get_templates(db)
+    templates = cached_get_templates()
     # Sort templates alphabetically
     templates = sorted(templates, key=lambda x: (x.name.lower(), (x.variety or "").lower()))
     
@@ -390,19 +414,21 @@ elif page == "Crop Registry":
                                     "expected_days_to_last_harvest": edit_h_end,
                                     "notes": edit_notes or None
                                 })
+                                st.cache_data.clear()
                                 st.success("✅ Updated!")
                                 st.rerun()
                 
                 with col_actions[1]:
                     if st.button(f"Delete {t.name}{variety_str}", key=f"del_t_{t.id}", use_container_width=True):
                         delete_template(db, t.id)
+                        st.cache_data.clear()
                         st.rerun()
 
 elif page == "Active Cultivations":
     st.header("🌾 Active Cultivations")
     st.markdown("<p class='help-text'>ℹ️ Track the progress of your current cultivations. Update actual dates and log yields when ready</p>", unsafe_allow_html=True)
     
-    cultivations = get_cultivations(db)
+    cultivations = cached_get_cultivations()
     # Filter only active ones
     active_cultivations = [c for c in cultivations if getattr(c, 'is_archived', 0) == 0]
     # Sort cultivations alphabetically
@@ -428,6 +454,7 @@ elif page == "Active Cultivations":
                     new_notes = st.text_area("Ongoing Notes", value=current_notes, key=f"notes_input_{c.id}", help="Update notes for this cultivation (quantity, location, performance, etc.)")
                     if st.form_submit_button("Update Notes"):
                         update_cultivation(db, c.id, {"notes": new_notes})
+                        st.cache_data.clear()
                         st.success("✅ Notes updated!")
                         st.rerun()
 
@@ -505,6 +532,7 @@ elif page == "Active Cultivations":
                             "actual_first_harvest_date": act_h_start,
                             "actual_last_harvest_date": act_h_end
                         })
+                        st.cache_data.clear()
                         st.success("✅ Updated!")
                         st.rerun()
                 
@@ -518,6 +546,7 @@ elif page == "Active Cultivations":
                     
                     if st.form_submit_button("Save Yield", type="primary"):
                         create_yield(db, c.id, yield_weight, yield_date, yield_notes if yield_notes else None)
+                        st.cache_data.clear()
                         st.success("✅ Yield recorded!")
                         st.rerun()
                 
@@ -538,11 +567,13 @@ elif page == "Active Cultivations":
                 with col_btn1:
                     if st.button(f"Archive Cultivation", key=f"arc_c_{c.id}", use_container_width=True, help="Move this cultivation to the Archive (e.g. after full harvest or failure)"):
                         update_cultivation(db, c.id, {"is_archived": 1})
+                        st.cache_data.clear()
                         st.success(f"✅ {c.template.name} moved to Archive!")
                         st.rerun()
                 with col_btn2:
                     if st.button(f"Delete Cultivation", key=f"del_c_{c.id}", use_container_width=True, help="Permanently delete this cultivation and its yields"):
                         delete_cultivation(db, c.id)
+                        st.cache_data.clear()
                         st.rerun()
 
 elif page == "Yield Tracker":
@@ -550,7 +581,7 @@ elif page == "Yield Tracker":
     st.markdown("<p class='help-text'>ℹ️ Track your harvests year-over-year. Monitor yields by crop, identify top performers, and plan future seasons</p>", unsafe_allow_html=True)
     
     # Get all templates and their yields
-    templates = get_templates(db)
+    templates = cached_get_templates()
     templates = sorted(templates, key=lambda x: (x.name.lower(), (x.variety or "").lower()))
     
     if not templates:
@@ -700,12 +731,14 @@ elif page == "Yield Tracker":
                                         "harvest_date": new_date,
                                         "notes": new_notes if new_notes else None
                                     })
+                                    st.cache_data.clear()
                                     st.success("✅ Yield updated!")
                                     st.rerun()
                         
                         with col2:
                             if st.button(f"Delete Yield", key=f"del_yield_{row['Yield ID']}", use_container_width=True):
                                 delete_yield(db, row['Yield ID'])
+                                st.cache_data.clear()
                                 st.success("✅ Yield deleted!")
                                 st.rerun()
             else:
@@ -752,7 +785,7 @@ elif page == "Raised Bed Map":
     svg_height = y_prot_front + cell_h + 10
 
     # ── Load Cultivations and Map to Cells ──────────────────────────
-    cultivations = get_cultivations(db)
+    cultivations = cached_get_cultivations()
     active_cultivations = [c for c in cultivations if getattr(c, 'is_archived', 0) == 0]
     
     # Map cell address to cultivation
@@ -925,6 +958,7 @@ elif page == "Raised Bed Map":
                     st.write("") # Spacer
                     if st.form_submit_button("Save Plot", type="primary", use_container_width=True):
                         update_cultivation_plot(db, c.id, final_address)
+                        st.cache_data.clear()
                         st.success("Saved!")
                         st.rerun()
 
@@ -1031,13 +1065,14 @@ elif page == "Fruit and Pruning":
             ) 
             if st.form_submit_button("Add Plant", type="primary"): 
                 add_fruit_plant(db, species, label or None, planted_year or None, plant_notes or None) 
+                st.cache_data.clear()
                 st.success(f"✅ Added {species}{' — ' + label if label else ''}!") 
                 st.rerun() 
 
     st.divider() 
 
     # ── Load all plants ─────────────────────────────────────────── 
-    fruit_plants = get_fruit_plants(db) 
+    fruit_plants = cached_get_fruit_plants() 
 
     if not fruit_plants: 
         st.info("No fruit plants added yet. Use the form above to add your first plant.") 
@@ -1132,6 +1167,7 @@ elif page == "Fruit and Pruning":
                                     db, plant.id, task["key"], 
                                     log_date, log_note or None 
                                 ) 
+                                st.cache_data.clear()
                                 st.success("Logged!") 
                                 st.rerun() 
 
@@ -1152,6 +1188,7 @@ elif page == "Fruit and Pruning":
                         with col_del: 
                             if st.button("🗑️", key=f"del_log_{log.id}"): 
                                 delete_pruning_log(db, log.id) 
+                                st.cache_data.clear()
                                 st.rerun() 
 
                 # ── Delete plant ────────────────────────────────── 
@@ -1162,6 +1199,7 @@ elif page == "Fruit and Pruning":
                     use_container_width=True 
                 ): 
                     delete_fruit_plant(db, plant.id) 
+                    st.cache_data.clear()
                     st.rerun() 
 
         # ── Pruning Timeline (Gantt Chart) ────────────────────────
@@ -1279,7 +1317,7 @@ elif page == "Cultivation Archive":
     st.header("📂 Cultivation Archive")
     st.markdown("<p class='help-text'>ℹ️ Revisit your completed cultivations. Review what worked, check your notes, and compare yields across years.</p>", unsafe_allow_html=True)
     
-    cultivations = get_cultivations(db)
+    cultivations = cached_get_cultivations()
     archived = [c for c in cultivations if getattr(c, 'is_archived', 0) == 1]
     
     if not archived:
@@ -1292,6 +1330,12 @@ elif page == "Cultivation Archive":
         # Sort by sow date descending (newest first)
         filtered_archived = sorted(filtered_archived, key=lambda x: x.sow_date, reverse=True)
         
+        # Before the loop — fetch all yields once 
+        all_yield_records = get_yields(db) 
+        yields_by_cultivation = {} 
+        for y in all_yield_records: 
+            yields_by_cultivation.setdefault(y.cultivation_id, []).append(y) 
+
         for c in filtered_archived:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
             year = c.sow_date.year
@@ -1307,7 +1351,7 @@ elif page == "Cultivation Archive":
                 
                 with col2:
                     st.write("**📊 Harvest Summary**")
-                    yields = get_yields_by_cultivation(db, c.id)
+                    yields = yields_by_cultivation.get(c.id, [])
                     if yields:
                         total_weight = sum(y.weight_kg for y in yields)
                         st.metric("Total Yield", f"{total_weight:.2f} kg")
@@ -1336,8 +1380,10 @@ elif page == "Cultivation Archive":
                 with col_btn1:
                     if st.button(f"Unarchive", key=f"unarc_{c.id}", use_container_width=True, help="Move back to Active Cultivations"):
                         update_cultivation(db, c.id, {"is_archived": 0})
+                        st.cache_data.clear()
                         st.rerun()
                 with col_btn2:
                     if st.button(f"Delete Permanently", key=f"del_arch_{c.id}", use_container_width=True):
                         delete_cultivation(db, c.id)
+                        st.cache_data.clear()
                         st.rerun()
