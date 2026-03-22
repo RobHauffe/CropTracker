@@ -101,6 +101,9 @@ class Cultivation(Base):
     actual_first_harvest_date = Column(Date)
     actual_last_harvest_date = Column(Date)
 
+    notes = Column(Text)
+    is_archived = Column(Integer, default=0) # 0 = Active, 1 = Archived
+
     template = relationship("CropTemplate", back_populates="cultivations")
     yields = relationship("Yield", back_populates="cultivation", cascade="all, delete-orphan")
 

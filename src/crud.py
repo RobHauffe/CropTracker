@@ -41,8 +41,8 @@ def delete_template(db: Session, template_id: int):
     return db_template
 
 # --- Cultivation CRUD ---
-def start_cultivation(db: Session, template_id: int, sow_date: datetime.date):
-    cultivation = Cultivation(template_id=template_id, sow_date=sow_date)
+def start_cultivation(db: Session, template_id: int, sow_date: datetime.date, notes: str = None):
+    cultivation = Cultivation(template_id=template_id, sow_date=sow_date, notes=notes)
     # Predicted dates are calculated based on the template
     db.add(cultivation)
     db.commit()

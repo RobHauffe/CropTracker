@@ -85,7 +85,7 @@ if 'nav_choice' not in st.session_state:
     st.session_state.nav_choice = "Dashboard"
 
 # We use index based on session state to avoid the "cannot be modified after instantiation" error
-page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Yield Tracker", "Fruit and Pruning"]
+page_list = ["Dashboard", "Timeline", "Crop Registry", "Active Cultivations", "Yield Tracker", "Fruit and Pruning", "Cultivation Archive"]
 current_index = page_list.index(st.session_state.nav_choice)
 
 page = st.sidebar.radio("Go to", page_list, index=current_index, label_visibility="collapsed")
@@ -145,11 +145,12 @@ if page == "Dashboard":
             st.rerun()
     else:
         sow_date = st.date_input("Sowing Date", datetime.date.today(), help="Date when you will sow the seeds")
+        sow_notes = st.text_area("Initial Cultivation Notes (optional)", placeholder="e.g. Sown 12 seeds in a 3x4 tray, using organic compost.", help="Add any details about this specific sowing (quantity, location, etc.)")
         
         if st.button("Start Cultivation", type="primary"):
             if templates and selected_option in template_options:
                 template_id = template_options[selected_option]
-                start_cultivation(db, template_id, sow_date)
+                start_cultivation(db, template_id, sow_date, sow_notes)
                 st.success(f"✅ Started cultivation for {selected_option}!")
                 st.rerun()
             else:
@@ -402,13 +403,15 @@ elif page == "Active Cultivations":
     st.markdown("<p class='help-text'>ℹ️ Track the progress of your current cultivations. Update actual dates and log yields when ready</p>", unsafe_allow_html=True)
     
     cultivations = get_cultivations(db)
+    # Filter only active ones
+    active_cultivations = [c for c in cultivations if getattr(c, 'is_archived', 0) == 0]
     # Sort cultivations alphabetically
-    cultivations = sorted(cultivations, key=lambda x: (x.template.name.lower(), (x.template.variety or "").lower()))
+    active_cultivations = sorted(active_cultivations, key=lambda x: (x.template.name.lower(), (x.template.variety or "").lower()))
     
-    if not cultivations:
+    if not active_cultivations:
         st.info("No crops in cultivation.")
     else:
-        for c in cultivations:
+        for c in active_cultivations:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
             progress = get_cultivation_progress(c)
             stage = get_cultivation_stage(c)
@@ -417,6 +420,17 @@ elif page == "Active Cultivations":
                 # Progress bar
                 st.progress(progress / 100, text=f"Progress: {progress:.0f}%")
                 
+                # Cultivation Notes
+                st.write("---")
+                st.subheader("📝 Cultivation Notes")
+                with st.form(f"notes_{c.id}"):
+                    current_notes = getattr(c, 'notes', "") or ""
+                    new_notes = st.text_area("Ongoing Notes", value=current_notes, key=f"notes_input_{c.id}", help="Update notes for this cultivation (quantity, location, performance, etc.)")
+                    if st.form_submit_button("Update Notes"):
+                        update_cultivation(db, c.id, {"notes": new_notes})
+                        st.success("✅ Notes updated!")
+                        st.rerun()
+
                 st.write("---")
                 st.subheader("📅 Predicted Dates")
                 col1, col2, col3, col4 = st.columns(4)
@@ -522,7 +536,12 @@ elif page == "Active Cultivations":
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button(f"Stop/Remove Cultivation", key=f"del_c_{c.id}", use_container_width=True):
+                    if st.button(f"Archive Cultivation", key=f"arc_c_{c.id}", use_container_width=True, help="Move this cultivation to the Archive (e.g. after full harvest or failure)"):
+                        update_cultivation(db, c.id, {"is_archived": 1})
+                        st.success(f"✅ {c.template.name} moved to Archive!")
+                        st.rerun()
+                with col_btn2:
+                    if st.button(f"Delete Cultivation", key=f"del_c_{c.id}", use_container_width=True, help="Permanently delete this cultivation and its yields"):
                         delete_cultivation(db, c.id)
                         st.rerun()
 
@@ -971,3 +990,70 @@ elif page == "Fruit and Pruning":
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No plants or tasks found to display on the timeline.")
+
+elif page == "Cultivation Archive":
+    st.header("📂 Cultivation Archive")
+    st.markdown("<p class='help-text'>ℹ️ Revisit your completed cultivations. Review what worked, check your notes, and compare yields across years.</p>", unsafe_allow_html=True)
+    
+    cultivations = get_cultivations(db)
+    archived = [c for c in cultivations if getattr(c, 'is_archived', 0) == 1]
+    
+    if not archived:
+        st.info("Your archive is empty. You can move cultivations here from the 'Active Cultivations' tab once they are finished.")
+    else:
+        # Search and filter
+        search_term = st.text_input("Search Archive (Crop or Variety)", "").lower()
+        filtered_archived = [c for c in archived if search_term in c.template.name.lower() or (c.template.variety and search_term in c.template.variety.lower())]
+        
+        # Sort by sow date descending (newest first)
+        filtered_archived = sorted(filtered_archived, key=lambda x: x.sow_date, reverse=True)
+        
+        for c in filtered_archived:
+            variety_str = f" ({c.template.variety})" if c.template.variety else ""
+            year = c.sow_date.year
+            with st.expander(f"📦 {c.template.name}{variety_str} — {year} (Sown: {c.sow_date})"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**📅 Key Dates**")
+                    st.write(f"- Sown: {c.sow_date}")
+                    if c.actual_germination_date: st.write(f"- Germinated: {c.actual_germination_date}")
+                    if c.actual_transplant_date: st.write(f"- Transplanted: {c.actual_transplant_date}")
+                    if c.actual_first_harvest_date: st.write(f"- First Harvest: {c.actual_first_harvest_date}")
+                    if c.actual_last_harvest_date: st.write(f"- Last Harvest: {c.actual_last_harvest_date}")
+                
+                with col2:
+                    st.write("**📊 Harvest Summary**")
+                    yields = get_yields_by_cultivation(db, c.id)
+                    if yields:
+                        total_weight = sum(y.weight_kg for y in yields)
+                        st.metric("Total Yield", f"{total_weight:.2f} kg")
+                        st.write(f"Logged over {len(yields)} harvests")
+                    else:
+                        st.write("No yields recorded.")
+                
+                st.write("---")
+                st.write("**📝 Cultivation Notes**")
+                if c.notes:
+                    st.info(c.notes)
+                else:
+                    st.write("*No notes recorded for this cultivation.*")
+                
+                # History of individual yields
+                if yields:
+                    with st.expander("🔍 View Individual Yield Logs"):
+                        yield_df = pd.DataFrame([{
+                            "Date": y.harvest_date,
+                            "Weight (kg)": y.weight_kg,
+                            "Notes": y.notes or ""
+                        } for y in yields])
+                        st.dataframe(yield_df, use_container_width=True)
+
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button(f"Unarchive", key=f"unarc_{c.id}", use_container_width=True, help="Move back to Active Cultivations"):
+                        update_cultivation(db, c.id, {"is_archived": 0})
+                        st.rerun()
+                with col_btn2:
+                    if st.button(f"Delete Permanently", key=f"del_arch_{c.id}", use_container_width=True):
+                        delete_cultivation(db, c.id)
+                        st.rerun()
