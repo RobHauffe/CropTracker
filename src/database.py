@@ -148,8 +148,25 @@ class PruningLog(Base):
     plant = relationship("FruitPlant", back_populates="pruning_logs")
 
 def create_db_and_tables():
-    """Initialize database - Alembic handles migrations"""
+    """Initialize database and handle simple migrations"""
     Base.metadata.create_all(engine)
+    
+    # Simple migration logic for existing production database
+    if "postgresql" in DATABASE_URL:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Check if columns exist in cultivations table
+            try:
+                # Add notes column if missing
+                conn.execute(text("ALTER TABLE cultivations ADD COLUMN IF NOT EXISTS notes TEXT"))
+                # Add is_archived column if missing
+                conn.execute(text("ALTER TABLE cultivations ADD COLUMN IF NOT EXISTS is_archived INTEGER DEFAULT 0"))
+                conn.commit()
+                print("✅ Database migrations (cultivations) checked/applied")
+            except Exception as e:
+                print(f"⚠️ Migration warning: {e}")
+                # Some versions of PG might not support IF NOT EXISTS in ALTER TABLE
+                # but Supabase (PG 15+) does.
 
 def get_db():
     db = SessionLocal()
