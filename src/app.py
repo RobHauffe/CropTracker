@@ -166,13 +166,18 @@ if page == "Dashboard":
             st.session_state.nav_choice = "Crop Registry"
             st.rerun()
     else:
-        sow_date = st.date_input("Sowing Date", datetime.date.today(), help="Date when you will sow the seeds")
+        col_sow1, col_sow2 = st.columns([2, 1])
+        with col_sow1:
+            sow_date = st.date_input("Sowing Date", datetime.date.today(), help="Date when you will sow the seeds")
+        with col_sow2:
+            sow_quantity = st.number_input("Quantity", min_value=1, value=1, help="Number of seeds sown / plants started")
+        
         sow_notes = st.text_area("Initial Cultivation Notes (optional)", placeholder="e.g. Sown 12 seeds in a 3x4 tray, using organic compost.", help="Add any details about this specific sowing (quantity, location, etc.)")
         
         if st.button("Start Cultivation", type="primary"):
             if templates and selected_option in template_options:
                 template_id = template_options[selected_option]
-                start_cultivation(db, template_id, sow_date, sow_notes)
+                start_cultivation(db, template_id, sow_date, sow_notes, sow_quantity)
                 st.cache_data.clear()
                 st.success(f"✅ Started cultivation for {selected_option}!")
                 st.rerun()
@@ -442,7 +447,7 @@ elif page == "Active Cultivations":
             progress = get_cultivation_progress(c)
             stage = get_cultivation_stage(c)
             
-            with st.expander(f"{c.template.name}{variety_str} - Sown: {c.sow_date} | {stage}", expanded=False):
+            with st.expander(f"{c.template.name}{variety_str} ({c.quantity} plants) - Sown: {c.sow_date} | {stage}", expanded=False):
                 # Progress bar
                 st.progress(progress / 100, text=f"Progress: {progress:.0f}%")
                 
@@ -611,6 +616,10 @@ elif page == "Yield Tracker":
                         
                         if yield_data:
                             yield_df = pd.DataFrame(yield_data)
+                            # Add quantity to yield_df if we can find it
+                            # (Note: this is a bit tricky as yields are linked to cultivations)
+                            # For now, let's just use the totals
+                            
                             yield_df = yield_df.sort_values(["Year", "Harvest Date"], ascending=[False, True])
                             
                             st.dataframe(yield_df, use_container_width=True)
@@ -649,23 +658,34 @@ elif page == "Yield Tracker":
                 st.divider()
                 st.write("**Top Performing Crops (by total yield):**")
                 
-                # Calculate total yield per crop
-                crop_totals = {}
+                # Calculate total yield per crop and yield per plant
+                crop_stats = {}
                 for y in all_yields:
                     cult = get_cultivation_by_id(db, y.cultivation_id)
                     if cult:
                         crop_name = f"{cult.template.name}{' (' + cult.template.variety + ')' if cult.template.variety else ''}"
-                        if crop_name not in crop_totals:
-                            crop_totals[crop_name] = 0
-                        crop_totals[crop_name] += y.weight_kg
+                        if crop_name not in crop_stats:
+                            crop_stats[crop_name] = {"total_yield": 0, "quantity": cult.quantity}
+                        crop_stats[crop_name]["total_yield"] += y.weight_kg
                 
-                sorted_crops = sorted(crop_totals.items(), key=lambda x: x[1], reverse=True)
-                crop_df = pd.DataFrame(sorted_crops, columns=["Crop", "Total Yield (kg)"])
+                # Convert to DataFrame
+                stats_list = []
+                for crop, data in crop_stats.items():
+                    stats_list.append({
+                        "Crop": crop,
+                        "Total Yield (kg)": round(data["total_yield"], 2),
+                        "Plants": data["quantity"],
+                        "Yield per Plant (kg)": round(data["total_yield"] / data["quantity"], 2) if data["quantity"] > 0 else 0
+                    })
+                
+                crop_df = pd.DataFrame(stats_list)
+                crop_df = crop_df.sort_values("Total Yield (kg)", ascending=False)
                 
                 st.dataframe(crop_df, use_container_width=True)
                 
                 # Chart for top crops
                 fig = px.bar(crop_df, x="Crop", y="Total Yield (kg)", title="Total Yield by Crop",
+                            hover_data=["Yield per Plant (kg)", "Plants"],
                             labels={"Total Yield (kg)": "Yield (kg)"})
                 fig.update_layout(xaxis_tickangle=-45)
                 st.plotly_chart(fig, use_container_width=True)
@@ -749,30 +769,30 @@ elif page == "Raised Bed Map":
     st.markdown("<p class='help-text'>ℹ️ Visual top-down map of your raised bed layout and plot assignments</p>", unsafe_allow_html=True)
 
     # ── SVG Configuration ──────────────────────────────────────────
-    # Scale: 1 cm = 2.5 px (increased for better visibility)
-    # Main bar cell: 70cm x 30cm -> 175px x 75px
+    # Scale: 1 cm = 2.5 px
+    # Main bar cell (halved width): 35cm x 30cm -> 87.5px x 75px
     # Protrusion cell: 45cm x 30cm -> 112.5px x 75px
     
-    cell_w_main = 175
+    cell_w_main = 87.5
     cell_w_prot = 112.5
     cell_h = 75
     gap = 12
     
-    # Coordinates for all 18 cells
+    # Coordinates for all 34 cells (16x2 + 2)
     # Row: Back (0), Front (1)
-    # Col: 1-8 (Main Bar), 9 (Protrusion)
+    # Col: 1-16 (Main Bar)
     cells = {}
     
-    # Main Bar (8x2)
+    # Main Bar (16x2)
     for r_idx, row_label in enumerate(["Back", "Front"]):
         y = r_idx * (cell_h + gap)
-        for c_idx in range(1, 9):
+        for c_idx in range(1, 17):
             x = (c_idx - 1) * cell_w_main
             cells[f"{row_label}-{c_idx}"] = {"x": x, "y": y, "w": cell_w_main, "h": cell_h}
             
-    # Protrusion (1x2) - renamed to Right-1 (top) and Right-2 (front)
-    # Aligned to the right edges of column 8, extending downward
-    x_prot_align_right = (8 * cell_w_main) - cell_w_prot
+    # Protrusion (1x2) - Right-1 (top) and Right-2 (front)
+    # Aligned to the right edges of column 16, extending downward
+    x_prot_align_right = (16 * cell_w_main) - cell_w_prot
     y_prot_1 = 2 * (cell_h + gap)
     y_prot_2 = 3 * (cell_h + gap)
     
@@ -780,7 +800,7 @@ elif page == "Raised Bed Map":
     cells["Right-2"] = {"x": x_prot_align_right, "y": y_prot_2, "w": cell_w_prot, "h": cell_h}
 
     # Total SVG Dimensions
-    svg_width = (8 * cell_w_main) + 20
+    svg_width = (16 * cell_w_main) + 20
     svg_height = y_prot_2 + cell_h + 20
 
     # ── Load Cultivations and Map to Cells ──────────────────────────
@@ -828,7 +848,7 @@ elif page == "Raised Bed Map":
     
     # Draw outer boundary
     # (Approximation of the L-shape)
-    path_d = f"M 0,0 H {8*cell_w_main} V {y_prot_2+cell_h} H {x_prot_align_right} V {2*cell_h+gap} H 0 Z"
+    path_d = f"M 0,0 H {16*cell_w_main} V {y_prot_2+cell_h} H {x_prot_align_right} V {2*cell_h+gap} H 0 Z"
     svg_content += f'<path d="{path_d}" fill="none" stroke="#2d5020" stroke-width="3" />'
 
     # Track which cultivations we've already rendered labels for (to handle spanning cells)
@@ -846,48 +866,60 @@ elif page == "Raised Bed Map":
         svg_content += f'<text x="{dims["x"]+5}" y="{dims["y"]+15}" font-family="sans-serif" font-size="11" fill="#7f8c8d">{addr}</text>'
         
         if c and c.id not in rendered_cultivations:
-            # Handle spanning cells
+            # Spanning Logic: find how many continuous horizontal cells follow this one
             display_w = dims["w"]
             display_x = dims["x"]
-            is_spanning = "," in (c.plot_address or "")
             
-            if is_spanning:
-                addresses = c.plot_address.split(',')
-                # Check if this is the first cell of the pair
-                if addr == addresses[0].strip():
-                    # Calculate total width if they are horizontal neighbors
-                    # (For this app, we'll just center it in the first cell or handle simple horizontal spanning)
-                    if len(addresses) == 2:
-                        addr2 = addresses[1].strip()
-                        if addr2 in cells:
-                            # If same row, we can span
-                            if cells[addr]["y"] == cells[addr2]["y"]:
-                                display_w = dims["w"] + (cells[addr2]["x"] - dims["x"])
+            if "," in (c.plot_address or ""):
+                addresses = [a.strip() for a in c.plot_address.split(',')]
+                # Only handle horizontal spanning if this is the leftmost cell in a row
+                if addr == addresses[0]:
+                    # Check how many subsequent cells in the list are on the same row and consecutive
+                    current_idx = all_addresses.index(addr)
+                    # We look ahead in the addresses list to see how many are consecutive on the same Y
+                    consecutive_count = 1
+                    for i in range(1, len(addresses)):
+                        next_addr = addresses[i]
+                        if next_addr in cells and cells[next_addr]["y"] == dims["y"]:
+                            # Check if it's the immediate horizontal neighbor
+                            # This is a bit simplistic but works for sorted plot names
+                            consecutive_count += 1
+                        else:
+                            break
+                    
+                    if consecutive_count > 1:
+                        # Find the rightmost cell in this consecutive block
+                        rightmost_addr = addresses[consecutive_count-1]
+                        display_w = (cells[rightmost_addr]["x"] + cells[rightmost_addr]["w"]) - display_x
                 else:
-                    # Skip rendering text for the second cell
+                    # Skip rendering text if not the first cell of this cultivation
                     continue
-
+            
             rendered_cultivations.add(c.id)
             
             # Crop Name
             crop_name = f"{c.template.name}"
-            if len(crop_name) > 20 and not is_spanning:
-                crop_name = crop_name[:17] + "..."
+            # Font size and truncation based on width
+            font_size = 14 if display_w > 100 else 11
+            max_chars = 25 if display_w > 100 else 12
             
-            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+42}" font-family="sans-serif" font-weight="bold" font-size="14" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
+            if len(crop_name) > max_chars:
+                crop_name = crop_name[:max_chars-3] + "..."
+            
+            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+42}" font-family="sans-serif" font-weight="bold" font-size="{font_size}" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
             
             # Next Milestone
             milestone_text = ""
             today = datetime.date.today()
             if not c.actual_germination_date and c.predicted_germination_date:
-                milestone_text = f"Germ: {c.predicted_germination_date.strftime('%d %b')}"
+                milestone_text = f"G:{c.predicted_germination_date.strftime('%d%b')}"
             elif not c.actual_transplant_date and c.predicted_transplant_date:
-                milestone_text = f"Trans: {c.predicted_transplant_date.strftime('%d %b')}"
+                milestone_text = f"T:{c.predicted_transplant_date.strftime('%d%b')}"
             elif not c.actual_first_harvest_date and c.predicted_first_harvest_date:
-                milestone_text = f"Harvest: {c.predicted_first_harvest_date.strftime('%d %b')}"
+                milestone_text = f"H:{c.predicted_first_harvest_date.strftime('%d%b')}"
             
-            if milestone_text:
-                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+62}" font-family="sans-serif" font-size="11" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
+            if milestone_text and display_w > 60:
+                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+62}" font-family="sans-serif" font-size="10" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
 
     svg_content += '</svg>'
     
@@ -919,43 +951,28 @@ elif page == "Raised Bed Map":
         
         for c in sorted_cults:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
-            current_addr = c.plot_address or "Unassigned"
+            current_addrs = [a.strip() for a in (c.plot_address or "").split(",") if a.strip() in all_addresses]
             
             with st.form(f"assign_{c.id}"):
-                st.write(f"**{c.template.name}{variety_str}** (Sown: {c.sow_date})")
+                st.write(f"**{c.template.name}{variety_str}** — {c.quantity} plants (Sown: {c.sow_date})")
                 
-                col1, col2, col3 = st.columns([2, 2, 1])
+                col_sel, col_btn = st.columns([4, 1])
                 
-                with col1:
-                    mode = st.radio("Assignment Mode", ["Single Cell", "Spans Two Cells"], 
-                                   index=1 if "," in current_addr else 0, key=f"mode_{c.id}", horizontal=True)
+                with col_sel:
+                    new_selection = st.multiselect(
+                        f"Select plots for {c.template.name} (Max {c.quantity})",
+                        options=all_addresses,
+                        default=current_addrs,
+                        key=f"ms_{c.id}",
+                        max_selections=c.quantity if c.quantity > 0 else None,
+                        help=f"Select up to {c.quantity} plots for these plants."
+                    )
                 
-                with col2:
-                    addrs = current_addr.split(",")
-                    if mode == "Single Cell":
-                        new_addr = st.selectbox("Select Plot", ["None"] + all_addresses, 
-                                               index=all_addresses.index(addrs[0].strip()) + 1 if addrs[0].strip() in all_addresses else 0,
-                                               key=f"sel1_{c.id}")
-                        final_address = None if new_addr == "None" else new_addr
-                    else:
-                        sub_col1, sub_col2 = st.columns(2)
-                        with sub_col1:
-                            a1 = st.selectbox("Cell 1", ["None"] + all_addresses, 
-                                             index=all_addresses.index(addrs[0].strip()) + 1 if addrs[0].strip() in all_addresses else 0,
-                                             key=f"sel1_span_{c.id}")
-                        with sub_col2:
-                            a2 = st.selectbox("Cell 2", ["None"] + all_addresses, 
-                                             index=all_addresses.index(addrs[1].strip()) + 1 if len(addrs) > 1 and addrs[1].strip() in all_addresses else 0,
-                                             key=f"sel2_span_{c.id}")
-                        
-                        if a1 == "None" or a2 == "None":
-                            final_address = None
-                        else:
-                            final_address = f"{a1},{a2}"
-                
-                with col3:
+                with col_btn:
                     st.write("") # Spacer
-                    if st.form_submit_button("Save Plot", type="primary", use_container_width=True):
+                    st.write("") # Spacer
+                    if st.form_submit_button("Save", type="primary", use_container_width=True):
+                        final_address = ",".join(new_selection) if new_selection else None
                         update_cultivation_plot(db, c.id, final_address)
                         st.cache_data.clear()
                         st.success("Saved!")
@@ -1004,12 +1021,21 @@ elif page == "Raised Bed Map":
                 return "Unknown"
             
             curr_fam = get_family(check_c.template.name)
+            curr_plots = [p.strip() for p in (check_c.plot_address or "").split(",") if p.strip()]
             
-            # Find history for this plot in previous years
-            plot_history = db.query(Cultivation).filter(
-                Cultivation.plot_address == check_c.plot_address,
+            # Find history for these plots in previous years
+            # We fetch all previous cultivations and check for plot overlap in Python
+            all_prev_cults = db.query(Cultivation).filter(
                 Cultivation.sow_date < datetime.date(check_c.sow_date.year, 1, 1)
             ).all()
+            
+            plot_history = []
+            for prev in all_prev_cults:
+                if not prev.plot_address:
+                    continue
+                prev_plots = [p.strip() for p in prev.plot_address.split(",") if p.strip()]
+                if any(p in curr_plots for p in prev_plots):
+                    plot_history.append(prev)
             
             if plot_history:
                 last_year = max(c.sow_date.year for c in plot_history)
@@ -1338,7 +1364,7 @@ elif page == "Cultivation Archive":
         for c in filtered_archived:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
             year = c.sow_date.year
-            with st.expander(f"📦 {c.template.name}{variety_str} — {year} (Sown: {c.sow_date})"):
+            with st.expander(f"📦 {c.template.name}{variety_str} ({c.quantity} plants) — {year} (Sown: {c.sow_date})"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write("**📅 Key Dates**")
