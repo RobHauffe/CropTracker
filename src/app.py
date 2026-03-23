@@ -749,14 +749,14 @@ elif page == "Raised Bed Map":
     st.markdown("<p class='help-text'>ℹ️ Visual top-down map of your raised bed layout and plot assignments</p>", unsafe_allow_html=True)
 
     # ── SVG Configuration ──────────────────────────────────────────
-    # Scale: 1 cm = 1.8 px
-    # Main bar cell: 70cm x 30cm -> 126px x 54px
-    # Protrusion cell: 45cm x 30cm -> 81px x 54px
+    # Scale: 1 cm = 2.5 px (increased for better visibility)
+    # Main bar cell: 70cm x 30cm -> 175px x 75px
+    # Protrusion cell: 45cm x 30cm -> 112.5px x 75px
     
-    cell_w_main = 126
-    cell_w_prot = 81
-    cell_h = 54
-    gap = 10
+    cell_w_main = 175
+    cell_w_prot = 112.5
+    cell_h = 75
+    gap = 12
     
     # Coordinates for all 18 cells
     # Row: Back (0), Front (1)
@@ -770,19 +770,18 @@ elif page == "Raised Bed Map":
             x = (c_idx - 1) * cell_w_main
             cells[f"{row_label}-{c_idx}"] = {"x": x, "y": y, "w": cell_w_main, "h": cell_h}
             
-    # Protrusion (1x2) - attached to the right of column 8, aligned to Front row, extending downward
-    # R-Back is at same Y as Front row, x is after column 8
-    # R-Front is below R-Back
-    x_prot = 8 * cell_w_main
-    y_prot_back = cell_h + gap
-    y_prot_front = y_prot_back + cell_h + gap
+    # Protrusion (1x2) - renamed to Right-1 (top) and Right-2 (front)
+    # Aligned to the right edges of column 8, extending downward
+    x_prot_align_right = (8 * cell_w_main) - cell_w_prot
+    y_prot_1 = 2 * (cell_h + gap)
+    y_prot_2 = 3 * (cell_h + gap)
     
-    cells["R-Back"] = {"x": x_prot, "y": y_prot_back, "w": cell_w_prot, "h": cell_h}
-    cells["R-Front"] = {"x": x_prot, "y": y_prot_front, "w": cell_w_prot, "h": cell_h}
+    cells["Right-1"] = {"x": x_prot_align_right, "y": y_prot_1, "w": cell_w_prot, "h": cell_h}
+    cells["Right-2"] = {"x": x_prot_align_right, "y": y_prot_2, "w": cell_w_prot, "h": cell_h}
 
     # Total SVG Dimensions
-    svg_width = (8 * cell_w_main) + cell_w_prot + 10
-    svg_height = y_prot_front + cell_h + 10
+    svg_width = (8 * cell_w_main) + 20
+    svg_height = y_prot_2 + cell_h + 20
 
     # ── Load Cultivations and Map to Cells ──────────────────────────
     cultivations = cached_get_cultivations()
@@ -829,7 +828,7 @@ elif page == "Raised Bed Map":
     
     # Draw outer boundary
     # (Approximation of the L-shape)
-    path_d = f"M 0,0 H {8*cell_w_main} V {cell_h+gap} H {8*cell_w_main+cell_w_prot} V {y_prot_front+cell_h} H {8*cell_w_main} V {2*cell_h+gap} H 0 Z"
+    path_d = f"M 0,0 H {8*cell_w_main} V {y_prot_2+cell_h} H {x_prot_align_right} V {2*cell_h+gap} H 0 Z"
     svg_content += f'<path d="{path_d}" fill="none" stroke="#2d5020" stroke-width="3" />'
 
     # Track which cultivations we've already rendered labels for (to handle spanning cells)
@@ -844,7 +843,7 @@ elif page == "Raised Bed Map":
         svg_content += f'<rect x="{dims["x"]}" y="{dims["y"]}" width="{dims["w"]}" height="{dims["h"]}" fill="{bg_color}" stroke="#2d5020" stroke-width="1.5" />'
         
         # Label address
-        svg_content += f'<text x="{dims["x"]+4}" y="{dims["y"]+12}" font-family="sans-serif" font-size="9" fill="#7f8c8d">{addr}</text>'
+        svg_content += f'<text x="{dims["x"]+5}" y="{dims["y"]+15}" font-family="sans-serif" font-size="11" fill="#7f8c8d">{addr}</text>'
         
         if c and c.id not in rendered_cultivations:
             # Handle spanning cells
@@ -872,10 +871,10 @@ elif page == "Raised Bed Map":
             
             # Crop Name
             crop_name = f"{c.template.name}"
-            if len(crop_name) > 15 and not is_spanning:
-                crop_name = crop_name[:12] + "..."
+            if len(crop_name) > 20 and not is_spanning:
+                crop_name = crop_name[:17] + "..."
             
-            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+30}" font-family="sans-serif" font-weight="bold" font-size="11" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
+            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+42}" font-family="sans-serif" font-weight="bold" font-size="14" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
             
             # Next Milestone
             milestone_text = ""
@@ -888,7 +887,7 @@ elif page == "Raised Bed Map":
                 milestone_text = f"Harvest: {c.predicted_first_harvest_date.strftime('%d %b')}"
             
             if milestone_text:
-                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+45}" font-family="sans-serif" font-size="9" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
+                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+62}" font-family="sans-serif" font-size="11" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
 
     svg_content += '</svg>'
     
@@ -977,7 +976,7 @@ elif page == "Raised Bed Map":
         
         st.markdown("""
         ### 💡 Practical Rotation Advice
-        - **Protrusion (R-Back, R-Front):** Best reserved for **Solanaceae** (chillies, peppers) as it typically gets the most sun exposure.
+        - **Protrusion (Right-1, Right-2):** Best reserved for **Solanaceae** (chillies, peppers) as it typically gets the most sun exposure.
         - **The Golden Rule:** **Legumes** should ideally precede **Brassicas** because legumes leave nitrogen in the soil which brassicas crave.
         - **Space Savers:** Leafy greens (lettuce, spinach) are fast and flexible; use them to fill gaps between longer-term crops.
         - **Diversity:** Even if you can't follow a perfect 4-year cycle, just ensuring you don't plant the same family in the same spot twice in a row helps significantly.
