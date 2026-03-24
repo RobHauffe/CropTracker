@@ -3,7 +3,7 @@ from database import create_db_and_tables, seed_data, SessionLocal, CropTemplate
 from crud import (
     create_template, get_templates, update_template, delete_template,
     start_cultivation, get_cultivations, update_cultivation, delete_cultivation,
-    get_template_by_id, get_cultivation_by_id, update_cultivation_plot,
+    get_template_by_id, get_cultivation_by_id, update_cultivation_plot, update_cultivation_quantity,
     create_yield, get_yields, get_yield_by_id, get_yields_by_cultivation, get_yields_by_crop, update_yield, delete_yield
 )
 import os
@@ -255,6 +255,35 @@ if page == "Dashboard":
                     st.write(f"- **{c.template.name}** - Harvest window started {c.predicted_first_harvest_date}")
             else:
                 st.write("None")
+        
+        # New: Quick Quantity Adjust section
+        st.divider()
+        st.subheader("🔢 Quick Adjust Plant Quantity")
+        st.markdown("<p class='help-text'>ℹ️ Update the number of actual living plants if some didn't germinate or were lost.</p>", unsafe_allow_html=True)
+        
+        # Filter for active ones and sort by name
+        active_c = [c for c in cultivations if getattr(c, 'is_archived', 0) == 0]
+        
+        if active_c:
+            # Let's use a selectbox to pick which one to adjust to keep the dashboard clean
+            adjust_options = {f"{c.template.name}{' (' + c.template.variety + ')' if c.template.variety else ''} (Sown: {c.sow_date})": c for c in active_c}
+            selected_to_adjust = st.selectbox("Select cultivation to adjust quantity", options=list(adjust_options.keys()), key="adjust_qty_sel")
+            
+            if selected_to_adjust:
+                target_c = adjust_options[selected_to_adjust]
+                col_q1, col_q2 = st.columns([1, 2])
+                with col_q1:
+                    new_qty = st.number_input("New Quantity", min_value=1, value=getattr(target_c, 'quantity', 1), key=f"new_qty_{target_c.id}")
+                with col_q2:
+                    st.write("") # padding
+                    st.write("") # padding
+                    if st.button("Update Quantity", key=f"btn_qty_{target_c.id}", type="secondary"):
+                        update_cultivation_quantity(db, target_c.id, new_qty)
+                        st.cache_data.clear()
+                        st.success(f"✅ Updated {target_c.template.name} to {new_qty} plants!")
+                        st.rerun()
+        else:
+            st.write("No active cultivations to adjust.")
 
 elif page == "Timeline":
     st.header("📈 Active Cultivations Timeline")

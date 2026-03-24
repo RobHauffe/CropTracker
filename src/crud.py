@@ -84,6 +84,14 @@ def update_cultivation_plot(db: Session, cultivation_id: int, plot_address: str)
         db.refresh(db_cultivation)
     return db_cultivation
 
+def update_cultivation_quantity(db: Session, cultivation_id: int, quantity: int):
+    db_cultivation = get_cultivation_by_id(db, cultivation_id)
+    if db_cultivation:
+        db_cultivation.quantity = quantity
+        db.commit()
+        db.refresh(db_cultivation)
+    return db_cultivation
+
 # --- Yield CRUD ---
 
 def create_yield(db: Session, cultivation_id: int, weight_kg: float, harvest_date: datetime.date, notes: str = None):
