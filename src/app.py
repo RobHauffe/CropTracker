@@ -92,6 +92,8 @@ def initialise_db():
     if not get_templates(db): 
         seed_data(db) 
     db.close() 
+    # Force clear data cache after initialization/migration to avoid stale objects
+    st.cache_data.clear()
  
 try:
     initialise_db()
@@ -447,7 +449,7 @@ elif page == "Active Cultivations":
             progress = get_cultivation_progress(c)
             stage = get_cultivation_stage(c)
             
-            with st.expander(f"{c.template.name}{variety_str} ({c.quantity} plants) - Sown: {c.sow_date} | {stage}", expanded=False):
+            with st.expander(f"{c.template.name}{variety_str} ({getattr(c, 'quantity', 1)} plants) - Sown: {c.sow_date} | {stage}", expanded=False):
                 # Progress bar
                 st.progress(progress / 100, text=f"Progress: {progress:.0f}%")
                 
@@ -665,7 +667,7 @@ elif page == "Yield Tracker":
                     if cult:
                         crop_name = f"{cult.template.name}{' (' + cult.template.variety + ')' if cult.template.variety else ''}"
                         if crop_name not in crop_stats:
-                            crop_stats[crop_name] = {"total_yield": 0, "quantity": cult.quantity}
+                            crop_stats[crop_name] = {"total_yield": 0, "quantity": getattr(cult, 'quantity', 1)}
                         crop_stats[crop_name]["total_yield"] += y.weight_kg
                 
                 # Convert to DataFrame
@@ -954,18 +956,18 @@ elif page == "Raised Bed Map":
             current_addrs = [a.strip() for a in (c.plot_address or "").split(",") if a.strip() in all_addresses]
             
             with st.form(f"assign_{c.id}"):
-                st.write(f"**{c.template.name}{variety_str}** — {c.quantity} plants (Sown: {c.sow_date})")
+                st.write(f"**{c.template.name}{variety_str}** — {getattr(c, 'quantity', 1)} plants (Sown: {c.sow_date})")
                 
                 col_sel, col_btn = st.columns([4, 1])
                 
                 with col_sel:
                     new_selection = st.multiselect(
-                        f"Select plots for {c.template.name} (Max {c.quantity})",
+                        f"Select plots for {c.template.name} (Max {getattr(c, 'quantity', 1)})",
                         options=all_addresses,
                         default=current_addrs,
                         key=f"ms_{c.id}",
-                        max_selections=c.quantity if c.quantity > 0 else None,
-                        help=f"Select up to {c.quantity} plots for these plants."
+                        max_selections=getattr(c, 'quantity', 1) if getattr(c, 'quantity', 1) > 0 else None,
+                        help=f"Select up to {getattr(c, 'quantity', 1)} plots for these plants."
                     )
                 
                 with col_btn:
@@ -1364,7 +1366,7 @@ elif page == "Cultivation Archive":
         for c in filtered_archived:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
             year = c.sow_date.year
-            with st.expander(f"📦 {c.template.name}{variety_str} ({c.quantity} plants) — {year} (Sown: {c.sow_date})"):
+            with st.expander(f"📦 {c.template.name}{variety_str} ({getattr(c, 'quantity', 1)} plants) — {year} (Sown: {c.sow_date})"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write("**📅 Key Dates**")
