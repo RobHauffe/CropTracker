@@ -814,12 +814,12 @@ elif page == "Raised Bed Map":
     # Col: 1-16 (Main Bar)
     cells = {}
     
-    # Main Bar (16x2)
+    # Main Bar (16x2) - renamed to "1-Back", "1-Front", "2-Back", etc.
     for r_idx, row_label in enumerate(["Back", "Front"]):
         y = r_idx * (cell_h + gap)
         for c_idx in range(1, 17):
             x = (c_idx - 1) * cell_w_main
-            cells[f"{row_label}-{c_idx}"] = {"x": x, "y": y, "w": cell_w_main, "h": cell_h}
+            cells[f"{c_idx}-{row_label}"] = {"x": x, "y": y, "w": cell_w_main, "h": cell_h}
             
     # Protrusion (1x2) - Right-1 (top) and Right-2 (front)
     # Aligned to the right edges of column 16, extending downward
@@ -980,8 +980,8 @@ elif page == "Raised Bed Map":
 
     svg_content += '</svg>'
     
-    # Display SVG
-    st.markdown(f'<div style="overflow-x: auto; padding: 10px; background-color: white; border-radius: 8px;">{svg_content}</div>', unsafe_allow_html=True)
+    # Display SVG  
+    st.markdown(f'<div style="overflow-x: auto; padding: 10px; background-color: white; border-radius: 8px;" id="raised-bed-map">{svg_content}</div>', unsafe_allow_html=True)
 
     # ── Legend ─────────────────────────────────────────────────────
     st.write("")
@@ -998,15 +998,111 @@ elif page == "Raised Bed Map":
         with legend_cols[i]:
             st.markdown(f'<div style="display: flex; align-items: center;"><div style="width: 15px; height: 15px; background-color: {color}; border: 1px solid #999; margin-right: 5px;"></div><span style="font-size: 12px;">{label}</span></div>', unsafe_allow_html=True)
 
+    # ── Interactive Quick Assign Section ─────────────────────────
+    st.divider()
+    st.subheader("🖱️ Quick Assign by Clicking Plots")
+    st.markdown("<p class='help-text'>ℹ️ Click a plot below to assign a crop to it. Only unoccupied crops will be shown.</p>", unsafe_allow_html=True)
+    
+    # Create a grid of clickable plots
+    plots_grid_cols = st.columns(8)
+    
+    # Sort all addresses: numbers first (1-Back, 1-Front, ..., 16-Back, 16-Front), then Right plots
+    numeric_plots = sorted([p for p in all_addresses if not p.startswith("Right")], 
+                          key=lambda x: (int(x.split('-')[0]), x.split('-')[1]))
+    right_plots = sorted([p for p in all_addresses if p.startswith("Right")])
+    sorted_plots = numeric_plots + right_plots
+    
+    for idx, plot in enumerate(sorted_plots):
+        col_idx = idx % 8
+        
+        if col_idx == 0:
+            plots_grid_cols = st.columns(8)
+        
+        with plots_grid_cols[col_idx]:
+            # Check if plot is occupied
+            is_occupied = plot in cell_assignments
+            occupation_info = ""
+            
+            if is_occupied:
+                c = cell_assignments[plot]
+                variety_str = f" ({c.template.variety})" if c.template.variety else ""
+                occupation_info = f"\n({c.template.name}{variety_str})"
+                button_disabled = True
+                button_color = "secondary"
+            else:
+                button_disabled = False
+                button_color = "primary"
+            
+            if st.button(
+                f"{plot}{occupation_info}",
+                key=f"quick_assign_{plot}",
+                disabled=button_disabled,
+                type=button_color,
+                use_container_width=True
+            ):
+                st.session_state[f"selected_plot"] = plot
+    
+    # If a plot was selected, show assignment options
+    if "selected_plot" in st.session_state:
+        selected_plot = st.session_state.selected_plot
+        st.divider()
+        st.subheader(f"📍 Assigning to Plot: {selected_plot}")
+        
+        # Get unassigned or partially assigned cultivations
+        unassigned_cults = [c for c in active_cultivations 
+                           if not c.plot_address or len(c.plot_address.split(',')) < getattr(c, 'quantity', 1)]
+        
+        if not unassigned_cults:
+            st.info("All cultivations are fully assigned to their plot slots!")
+        else:
+            with st.form(f"quick_assign_form_{selected_plot}"):
+                selected_cult = st.selectbox(
+                    f"Choose a crop to plant in {selected_plot}",
+                    options=unassigned_cults,
+                    format_func=lambda c: f"{c.template.name}{' (' + c.template.variety + ')' if c.template.variety else ''} - {getattr(c, 'quantity', 1)} plants, Sown: {c.sow_date}"
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button("✅ Assign to This Plot", type="primary"):
+                        if selected_cult:
+                            # Add this plot to the cultivation's address list
+                            current_addrs = [a.strip() for a in (selected_cult.plot_address or "").split(",") if a.strip()]
+                            if selected_plot not in current_addrs:
+                                current_addrs.append(selected_plot)
+                            new_address = ",".join(current_addrs)
+                            update_cultivation_plot(db, selected_cult.id, new_address)
+                            st.cache_data.clear()
+                            del st.session_state["selected_plot"]
+                            st.success(f"✅ {selected_cult.template.name} assigned to {selected_plot}!")
+                            st.rerun()
+                
+                with col2:
+                    if st.form_submit_button("❌ Cancel", type="secondary"):
+                        del st.session_state["selected_plot"]
+                        st.rerun()
+
     # ── Plot Assignment UI ─────────────────────────────────────────
     st.divider()
     with st.expander("📌 Assign Cultivations to Plots", expanded=True):
+        # Calculate occupied plots (exclude current cultivation's plots)
+        def get_available_plots(current_cult_id):
+            occupied = set()
+            for c in active_cultivations:
+                if c.id != current_cult_id and c.plot_address:
+                    for addr in c.plot_address.split(','):
+                        occupied.add(addr.strip())
+            return [addr for addr in all_addresses if addr not in occupied]
+        
         # Sort: Unassigned first, then by name
         sorted_cults = sorted(active_cultivations, key=lambda x: (0 if not x.plot_address else 1, x.template.name.lower()))
         
         for c in sorted_cults:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
             current_addrs = [a.strip() for a in (c.plot_address or "").split(",") if a.strip() in all_addresses]
+            available_plots = get_available_plots(c.id)
+            # Add current plots to available options so user can keep them
+            available_options = sorted(list(set(available_plots + current_addrs)))
             
             with st.form(f"assign_{c.id}"):
                 st.write(f"**{c.template.name}{variety_str}** — {getattr(c, 'quantity', 1)} plants (Sown: {c.sow_date})")
@@ -1016,11 +1112,11 @@ elif page == "Raised Bed Map":
                 with col_sel:
                     new_selection = st.multiselect(
                         f"Select plots for {c.template.name} (Max {getattr(c, 'quantity', 1)})",
-                        options=all_addresses,
+                        options=available_options,
                         default=current_addrs,
                         key=f"ms_{c.id}",
                         max_selections=getattr(c, 'quantity', 1) if getattr(c, 'quantity', 1) > 0 else None,
-                        help=f"Select up to {getattr(c, 'quantity', 1)} plots for these plants."
+                        help=f"Select up to {getattr(c, 'quantity', 1)} plots. Only unoccupied plots are shown."
                     )
                 
                 with col_btn:
