@@ -833,6 +833,8 @@ elif page == "Raised Bed Map":
     # Total SVG Dimensions
     svg_width = (16 * cell_w_main) + 20
     svg_height = y_prot_2 + cell_h + 20
+    
+    all_addresses = list(cells.keys())
 
     # ── Load Cultivations and Map to Cells ──────────────────────────
     cultivations = cached_get_cultivations()
@@ -977,8 +979,6 @@ elif page == "Raised Bed Map":
     with st.expander("📌 Assign Cultivations to Plots", expanded=True):
         # Sort: Unassigned first, then by name
         sorted_cults = sorted(active_cultivations, key=lambda x: (0 if not x.plot_address else 1, x.template.name.lower()))
-        
-        all_addresses = list(cells.keys())
         
         for c in sorted_cults:
             variety_str = f" ({c.template.variety})" if c.template.variety else ""
