@@ -884,52 +884,65 @@ elif page == "Raised Bed Map":
     path_d = f"M 0,0 H {16*cell_w_main} V {y_prot_2+cell_h} H {x_prot_align_right} V {2*cell_h+gap} H 0 Z"
     svg_content += f'<path d="{path_d}" fill="none" stroke="#2d5020" stroke-width="3" />'
 
-    # Track which cultivations we've already rendered labels for (to handle spanning cells)
-    rendered_cultivations = set()
-
+    # ── Rendering Pass 1: Background Rectangles ──────────────────────
     for addr, dims in cells.items():
         c = cell_assignments.get(addr)
         bg_color = get_cell_color(c)
-        text_color = get_text_color(bg_color)
-        
-        # Draw cell
         svg_content += f'<rect x="{dims["x"]}" y="{dims["y"]}" width="{dims["w"]}" height="{dims["h"]}" fill="{bg_color}" stroke="#2d5020" stroke-width="1.5" />'
-        
-        # Label address
+
+    # ── Rendering Pass 2: Address Labels (Small) ──────────────────────
+    for addr, dims in cells.items():
         svg_content += f'<text x="{dims["x"]+5}" y="{dims["y"]+15}" font-family="sans-serif" font-size="11" fill="#7f8c8d">{addr}</text>'
+
+    # ── Rendering Pass 3: Crop Names & Milestones ─────────────────────
+    rendered_centered_cultivations = set()
+
+    for addr, dims in cells.items():
+        c = cell_assignments.get(addr)
+        if not c:
+            continue
+            
+        bg_color = get_cell_color(c)
+        text_color = get_text_color(bg_color)
+        qty = getattr(c, 'quantity', 1)
         
-        if c and c.id not in rendered_cultivations:
-            # Spanning Logic: find how many continuous horizontal cells follow this one
+        # Determine if we should render a centered label or individual label
+        # Case 1: Multiple plants -> Render in every assigned cell
+        if qty > 1:
             display_w = dims["w"]
             display_x = dims["x"]
+            render_here = True
+        # Case 2: Single plant -> Render once, centered across all assigned cells
+        else:
+            if c.id in rendered_centered_cultivations:
+                continue
+            
+            display_w = dims["w"]
+            display_x = dims["x"]
+            render_here = True
             
             if "," in (c.plot_address or ""):
                 addresses = [a.strip() for a in c.plot_address.split(',')]
-                # Only handle horizontal spanning if this is the leftmost cell in a row
+                # Only start rendering from the first address in the list
                 if addr == addresses[0]:
-                    # Check how many subsequent cells in the list are on the same row and consecutive
-                    current_idx = all_addresses.index(addr)
-                    # We look ahead in the addresses list to see how many are consecutive on the same Y
-                    consecutive_count = 1
-                    for i in range(1, len(addresses)):
-                        next_addr = addresses[i]
-                        if next_addr in cells and cells[next_addr]["y"] == dims["y"]:
-                            # Check if it's the immediate horizontal neighbor
-                            # This is a bit simplistic but works for sorted plot names
-                            consecutive_count += 1
+                    # Find all assigned cells that are on the same row and consecutive
+                    # (For simplicity, we check horizontal continuity)
+                    consecutive_addrs = []
+                    for a in addresses:
+                        if a in cells and cells[a]["y"] == dims["y"]:
+                            consecutive_addrs.append(a)
                         else:
-                            break
+                            break # Stop at first break or row change
                     
-                    if consecutive_count > 1:
-                        # Find the rightmost cell in this consecutive block
-                        rightmost_addr = addresses[consecutive_count-1]
+                    if len(consecutive_addrs) > 1:
+                        rightmost_addr = consecutive_addrs[-1]
                         display_w = (cells[rightmost_addr]["x"] + cells[rightmost_addr]["w"]) - display_x
+                    
+                    rendered_centered_cultivations.add(c.id)
                 else:
-                    # Skip rendering text if not the first cell of this cultivation
-                    continue
-            
-            rendered_cultivations.add(c.id)
-            
+                    render_here = False
+
+        if render_here:
             # Crop Name
             crop_name = f"{c.template.name}"
             # Font size and truncation based on width
