@@ -945,6 +945,8 @@ elif page == "Raised Bed Map":
         if render_here:
             # Crop Name
             crop_name = f"{c.template.name}"
+            variety_name = f"({c.template.variety})" if c.template.variety else ""
+            
             # Font size and truncation based on width
             font_size = 14 if display_w > 100 else 11
             max_chars = 25 if display_w > 100 else 12
@@ -952,8 +954,16 @@ elif page == "Raised Bed Map":
             if len(crop_name) > max_chars:
                 crop_name = crop_name[:max_chars-3] + "..."
             
-            svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+42}" font-family="sans-serif" font-weight="bold" font-size="{font_size}" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
+            # Draw Name
+            name_y = dims["y"] + 35 if variety_name else dims["y"] + 42
+            svg_content += f'<text x="{display_x + display_w/2}" y="{name_y}" font-family="sans-serif" font-weight="bold" font-size="{font_size}" fill="{text_color}" text-anchor="middle">{crop_name}</text>'
             
+            # Draw Variety (if exists)
+            if variety_name:
+                if len(variety_name) > max_chars:
+                    variety_name = variety_name[:max_chars-3] + "...)"
+                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+50}" font-family="sans-serif" font-size="10" fill="{text_color}" text-anchor="middle">{variety_name}</text>'
+
             # Next Milestone
             milestone_text = ""
             today = datetime.date.today()
@@ -965,7 +975,8 @@ elif page == "Raised Bed Map":
                 milestone_text = f"H:{c.predicted_first_harvest_date.strftime('%d%b')}"
             
             if milestone_text and display_w > 60:
-                svg_content += f'<text x="{display_x + display_w/2}" y="{dims["y"]+62}" font-family="sans-serif" font-size="10" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
+                milestone_y = dims["y"] + 65 if variety_name else dims["y"] + 62
+                svg_content += f'<text x="{display_x + display_w/2}" y="{milestone_y}" font-family="sans-serif" font-size="10" fill="{text_color}" text-anchor="middle">{milestone_text}</text>'
 
     svg_content += '</svg>'
     
